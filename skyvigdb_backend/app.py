@@ -128,6 +128,43 @@ def login():
         logger.error(f"Login error: {e}")
         return jsonify({'error': 'Database error', 'message': str(e)}), 500
 
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    data = request.json or {}
+    username = data.get('username')
+    password = data.get('password')
+    role = data.get('role', 'student')
+    first_name = data.get('first_name', '')
+    
+    if not username or not password:
+        return jsonify({'error': 'Username and password required'}), 400
+    
+    if len(password) < 6:
+        return jsonify({'error': 'Password must be at least 6 characters'}), 400
+    
+    try:
+        if User.query.filter_by(username=username).first():
+            return jsonify({'error': 'Username already exists'}), 409
+        
+        user = User(
+            username=username,
+            password_hash=generate_password_hash(password),
+            role=role,
+            first_name=first_name
+        )
+        db.session.add(user)
+        db.session.commit()
+        logger.info(f"New user registered: {username}")
+        return jsonify({
+            'success': True, 
+            'message': 'User created successfully',
+            'user': {'id': user.id, 'username': user.username, 'role': user.role}
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Registration error: {e}")
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
+
 @app.route('/api/cases', methods=['GET'])
 def get_cases():
     try:
