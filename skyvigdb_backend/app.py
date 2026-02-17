@@ -47,7 +47,7 @@ class Case(db.Model):
     current_status = db.Column(db.String(50), default='triage')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# Initialize database on startup
+# Initialize database on startup - WITH ERROR HANDLING
 def init_database():
     with app.app_context():
         try:
@@ -73,10 +73,13 @@ def init_database():
         except Exception as e:
             db.session.rollback()
             logger.error(f"Database init error: {e}")
-            raise
+            # Don't raise - let app start anyway
 
-# Call it immediately
-init_database()
+# Call it but don't crash if it fails
+try:
+    init_database()
+except Exception as e:
+    logger.error(f"Failed to init DB on startup: {e}")
 
 # Routes
 @app.route('/health')
@@ -102,14 +105,18 @@ def login():
     if not username or not password:
         return jsonify({'error': 'Username and password required'}), 400
     
-    user = User.query.filter_by(username=username).first()
-    
-    if user and check_password_hash(user.password_hash, password):
-        return jsonify({
-            'success': True,
-            'user': {'id': user.id, 'username': user.username, 'role': user.role}
-        })
-    return jsonify({'error': 'Invalid credentials'}), 401
+    try:
+        user = User.query.filter_by(username=username).first()
+        
+        if user and check_password_hash(user.password_hash, password):
+            return jsonify({
+                'success': True,
+                'user': {'id': user.id, 'username': user.username, 'role': user.role}
+            })
+        return jsonify({'error': 'Invalid credentials'}), 401
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        return jsonify({'error': 'Database error'}), 500
 
 @app.route('/api/cases', methods=['GET'])
 def get_cases():
