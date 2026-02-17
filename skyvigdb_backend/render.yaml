@@ -2,6 +2,7 @@ services:
   - type: web
     name: skyvigdb_backend
     runtime: python
+    rootDir: skyvigdb_backend
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn --bind 0.0.0.0:$PORT app:app
     envVars:
@@ -10,4 +11,4 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: DATABASE_URL
-        sync: false
+        value: sqlite:///data/skyvigdb.db
