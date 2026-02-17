@@ -7,10 +7,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY skyvigdb_backend/requirements.txt .
+# Files are already in root (skyvigdb_backend is the root)
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY skyvigdb_backend/ .
+COPY . .
 
 ENV PORT=8080
 ENV PYTHONUNBUFFERED=1
