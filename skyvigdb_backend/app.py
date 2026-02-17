@@ -18,11 +18,20 @@ app = Flask(__name__)
 
 # Configuration
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
-database_url = os.environ.get('DATABASE_URL', 'sqlite:///tmp/skyvigdb.db')
+
+database_url = os.environ.get('DATABASE_URL', '')
+if not database_url:
+    logger.error("DATABASE_URL is not set!")
+    sys.exit(1)
+
+# Fix for Supabase/older Heroku-style URLs
+if database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-logger.info(f"Config loaded, DB: {database_url}")
+logger.info("Config loaded")
 
 # Initialize extensions
 db = SQLAlchemy(app)
@@ -57,8 +66,7 @@ def init_database():
         try:
             db.create_all()
             logger.info("Database tables created")
-            
-            # Seed demo users if empty
+
             if not User.query.first():
                 users = [
                     ('demo', 'demo123', 'student', 'Demo'),
@@ -77,11 +85,13 @@ def init_database():
         except Exception as e:
             db.session.rollback()
             logger.error(f"Database init error: {e}")
+            raise
 
 try:
     init_database()
 except Exception as e:
     logger.error(f"Failed to init DB on startup: {e}")
+    sys.exit(1)
 
 # Routes
 @app.route('/')
@@ -91,25 +101,23 @@ def index():
 @app.route('/health')
 def health_check():
     try:
-        # Test DB connection - SQLAlchemy 2.0 syntax
         db.session.execute(text('SELECT 1'))
         return jsonify({'status': 'healthy', 'service': 'SkyVigDB', 'version': '1.0'})
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
-        return jsonify({'status': 'healthy', 'service': 'SkyVigDB', 'version': '1.0', 'db_warning': str(e)})
+        return jsonify({'status': 'unhealthy', 'service': 'SkyVigDB', 'db_error': str(e)}), 500
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
     data = request.json or {}
     username = data.get('username')
     password = data.get('password')
-    
+
     if not username or not password:
         return jsonify({'error': 'Username and password required'}), 400
-    
+
     try:
         user = User.query.filter_by(username=username).first()
-        
         if user and check_password_hash(user.password_hash, password):
             return jsonify({
                 'success': True,
