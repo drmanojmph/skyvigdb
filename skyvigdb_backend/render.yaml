@@ -1,13 +1,15 @@
 services:
   - type: web
     name: skyvigdb_backend
-    runtime: node
-    buildCommand: npm install
-    startCommand: node server.js
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
     envVars:
-      - key: NODE_ENV
-        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0
       - key: MONGODB_URI
         sync: false
       - key: JWT_SECRET
         sync: false
+      - key: FLASK_ENV
+        value: production
