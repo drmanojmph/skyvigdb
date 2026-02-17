@@ -120,7 +120,30 @@ def init_db():
             logger.info("Database initialized!")
     except Exception as e:
         logger.error(f"Init failed: {str(e)}")
-
+# Add this right before if __name__ == '__main__':
+@app.before_request
+def create_tables():
+    db.create_all()
+    # Create demo users if none exist
+    if not User.query.first():
+        try:
+            users = [
+                ('demo', 'demo123', 'student', 'Demo'),
+                ('admin', 'admin123', 'admin', 'Admin'),
+            ]
+            for username, password, role, fname in users:
+                user = User(
+                    username=username,
+                    password_hash=generate_password_hash(password),
+                    role=role,
+                    first_name=fname
+                )
+                db.session.add(user)
+            db.session.commit()
+            logger.info("Database initialized with demo users!")
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Init error: {str(e)}")
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
