@@ -3,15 +3,11 @@ services:
     name: skyvigdb_backend
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn --bind 0.0.0.0:$PORT app:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
-      - key: MONGODB_URI
-        sync: false
-      - key: JWT_SECRET
-        sync: false
-      - key: FLASK_ENV
-        value: production
       - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
         sync: false
