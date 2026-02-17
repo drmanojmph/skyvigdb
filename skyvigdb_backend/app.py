@@ -24,7 +24,33 @@ logger.info(f"Starting SkyVigDB...")
 # Initialize extensions
 # Initialize extensions
 db = SQLAlchemy(app)
+# Initialize extensions
+db = SQLAlchemy(app)
 
+# Create tables on first request (safer than at startup)
+@app.before_first_request
+def create_tables():
+    db.create_all()
+    # Seed demo users if empty
+    if not User.query.first():
+        try:
+            users = [
+                ('demo', 'demo123', 'student', 'Demo'),
+                ('admin', 'admin123', 'admin', 'Admin'),
+            ]
+            for username, password, role, fname in users:
+                user = User(
+                    username=username,
+                    password_hash=generate_password_hash(password),
+                    role=role,
+                    first_name=fname
+                )
+                db.session.add(user)
+            db.session.commit()
+            logger.info("Database initialized!")
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"DB init error: {e}")
 # Auto-create tables on startup
 with app.app_context():
     db.create_all()
