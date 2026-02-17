@@ -1,15 +1,18 @@
 import os
+import sys
 import logging
-from flask import Flask, request, jsonify, session
+from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy import text
 from datetime import datetime
 import uuid
 
 # Logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+logger.info("=== APP STARTING ===")
 
 app = Flask(__name__)
 
@@ -19,17 +22,18 @@ database_url = os.environ.get('DATABASE_URL', 'sqlite:///tmp/skyvigdb.db')
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-logger.info(f"Starting SkyVigDB with DB: {database_url}")
+logger.info(f"Config loaded, DB: {database_url}")
 
 # Initialize extensions
 db = SQLAlchemy(app)
+logger.info("DB initialized")
 
-# CORS - Allow all origins for API routes
+# CORS
 CORS(app, resources={
     r"/api/*": {
         "origins": "*",
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization", "X-Requested-With"]
+        "allow_headers": ["Content-Type", "Authorization"]
     }
 })
 
@@ -47,7 +51,7 @@ class Case(db.Model):
     current_status = db.Column(db.String(50), default='triage')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# Initialize database on startup - WITH ERROR HANDLING
+# Initialize database on startup
 def init_database():
     with app.app_context():
         try:
@@ -73,28 +77,26 @@ def init_database():
         except Exception as e:
             db.session.rollback()
             logger.error(f"Database init error: {e}")
-            # Don't raise - let app start anyway
 
-# Call it but don't crash if it fails
 try:
     init_database()
 except Exception as e:
     logger.error(f"Failed to init DB on startup: {e}")
 
 # Routes
-@app.route('/health')
-def health_check():
-    try:
-        # Test DB connection
-        db.session.execute('SELECT 1')
-        return jsonify({'status': 'healthy', 'service': 'SkyVigDB', 'version': '1.0'})
-    except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
 @app.route('/')
 def index():
     return jsonify({'message': 'SkyVigDB API', 'version': '1.0'})
+
+@app.route('/health')
+def health_check():
+    try:
+        # Test DB connection - SQLAlchemy 2.0 syntax
+        db.session.execute(text('SELECT 1'))
+        return jsonify({'status': 'healthy', 'service': 'SkyVigDB', 'version': '1.0'})
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return jsonify({'status': 'healthy', 'service': 'SkyVigDB', 'version': '1.0', 'db_warning': str(e)})
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
@@ -116,7 +118,7 @@ def login():
         return jsonify({'error': 'Invalid credentials'}), 401
     except Exception as e:
         logger.error(f"Login error: {e}")
-        return jsonify({'error': 'Database error'}), 500
+        return jsonify({'error': 'Database error', 'message': str(e)}), 500
 
 @app.route('/api/cases', methods=['GET'])
 def get_cases():
@@ -143,6 +145,9 @@ def create_case():
         logger.error(f"Error: {str(e)}")
         return jsonify({'error': 'Database error'}), 500
 
+logger.info("=== APP LOADED SUCCESSFULLY ===")
+
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(debug=False, host='0.0.0.0', port=port)
+    port = int(os.environ.get('PORT', 10000))
+    logger.info(f"Starting server on port {port}")
+    app.run(host='0.0.0.0', port=port)
