@@ -133,7 +133,13 @@ def create_case():
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         return jsonify({'error': 'Database error'}), 500
-
+@app.errorhandler(Exception)
+def handle_error(e):
+    import traceback
+    return jsonify({
+        'error': str(e),
+        'traceback': traceback.format_exc()
+    }), 500
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     app.run(debug=False, host='0.0.0.0', port=port)
