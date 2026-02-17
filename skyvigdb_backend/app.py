@@ -47,35 +47,36 @@ class Case(db.Model):
     current_status = db.Column(db.String(50), default='triage')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# Initialize database before first request
-@app.before_request
-def init_db():
-    # Only run once
-    if not hasattr(app, '_db_initialized'):
-        with app.app_context():
+# Initialize database on startup
+def init_database():
+    with app.app_context():
+        try:
             db.create_all()
+            logger.info("Database tables created")
+            
             # Seed demo users if empty
             if not User.query.first():
-                try:
-                    users = [
-                        ('demo', 'demo123', 'student', 'Demo'),
-                        ('admin', 'admin123', 'admin', 'Admin'),
-                    ]
-                    for username, password, role, fname in users:
-                        user = User(
-                            username=username,
-                            password_hash=generate_password_hash(password),
-                            role=role,
-                            first_name=fname
-                        )
-                        db.session.add(user)
-                    db.session.commit()
-                    logger.info("Database initialized with demo users!")
-                except Exception as e:
-                    db.session.rollback()
-                    logger.error(f"DB init error: {e}")
-        app._db_initialized = True
+                users = [
+                    ('demo', 'demo123', 'student', 'Demo'),
+                    ('admin', 'admin123', 'admin', 'Admin'),
+                ]
+                for username, password, role, fname in users:
+                    user = User(
+                        username=username,
+                        password_hash=generate_password_hash(password),
+                        role=role,
+                        first_name=fname
+                    )
+                    db.session.add(user)
+                db.session.commit()
+                logger.info("Demo users created!")
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Database init error: {e}")
+            raise
 
+# Call it immediately
+init_database()
 # Routes
 @app.route('/health')
 def health_check():
