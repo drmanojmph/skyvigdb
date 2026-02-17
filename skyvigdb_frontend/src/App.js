@@ -10,6 +10,15 @@ function App() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
+  // Check for saved login on load
+  useEffect(() => {
+    const savedUser = localStorage.getItem('skyvigdb_user');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+      fetchCases();
+    }
+  }, []);
+
   const login = async (e) => {
     e.preventDefault();
     try {
@@ -17,12 +26,22 @@ function App() {
         username,
         password
       });
-      setUser(response.data.user);
+      const userData = response.data.user;
+      setUser(userData);
+      localStorage.setItem('skyvigdb_user', JSON.stringify(userData));
       setError('');
       fetchCases();
     } catch (err) {
-      setError('Login failed');
+      setError('Invalid username or password');
     }
+  };
+
+  const logout = () => {
+    setUser(null);
+    setCases([]);
+    localStorage.removeItem('skyvigdb_user');
+    setUsername('');
+    setPassword('');
   };
 
   const fetchCases = async () => {
@@ -67,16 +86,44 @@ function App() {
             Login
           </button>
         </form>
-        <p>Demo: demo / demo123</p>
+        {/* DEMO CREDENTIALS REMOVED FOR SECURITY */}
       </div>
     );
   }
 
   return (
     <div style={{ maxWidth: '800px', margin: '50px auto', padding: '20px' }}>
-      <h1>SkyVigDB Dashboard</h1>
-      <p>Welcome, {user.username} ({user.role})</p>
-      <button onClick={createCase} style={{ padding: '10px 20px', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1>SkyVigDB Dashboard</h1>
+        <button 
+          onClick={logout} 
+          style={{ 
+            padding: '10px 20px', 
+            background: '#dc3545', 
+            color: 'white',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: 'pointer'
+          }}
+        >
+          Logout
+        </button>
+      </div>
+      
+      <p>Welcome, <strong>{user.username}</strong> ({user.role})</p>
+      
+      <button 
+        onClick={createCase} 
+        style={{ 
+          padding: '10px 20px', 
+          marginBottom: '20px',
+          background: '#28a745',
+          color: 'white',
+          border: 'none',
+          borderRadius: '5px',
+          cursor: 'pointer'
+        }}
+      >
         + New Case
       </button>
       
