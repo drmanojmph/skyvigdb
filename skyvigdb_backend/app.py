@@ -22,7 +22,32 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 logger.info(f"Starting SkyVigDB...")
 
 # Initialize extensions
+# Initialize extensions
 db = SQLAlchemy(app)
+
+# Auto-create tables on startup
+with app.app_context():
+    db.create_all()
+    # Create demo users if none exist
+    if not User.query.first():
+        try:
+            users = [
+                ('demo', 'demo123', 'student', 'Demo'),
+                ('admin', 'admin123', 'admin', 'Admin'),
+            ]
+            for username, password, role, fname in users:
+                user = User(
+                    username=username,
+                    password_hash=generate_password_hash(password),
+                    role=role,
+                    first_name=fname
+                )
+                db.session.add(user)
+            db.session.commit()
+            logger.info("Database initialized with demo users!")
+        except Exception as e:
+            db.session.rollback()
+            logger.error(f"Init error: {str(e)}")
 
 # CORS - Allow all origins for API routes
 CORS(app, resources={
