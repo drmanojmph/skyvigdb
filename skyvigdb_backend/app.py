@@ -91,7 +91,7 @@ try:
     init_database()
 except Exception as e:
     logger.error(f"Failed to init DB on startup: {e}")
-    sys.exit(1)
+    # Don't exit - let the app start and handle DB errors per request
 
 # Routes
 @app.route('/')
