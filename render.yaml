@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: skyvigdb_backend
+    name: skyvigdb
     runtime: python
     rootDir: skyvigdb_backend
     buildCommand: pip install -r requirements.txt
