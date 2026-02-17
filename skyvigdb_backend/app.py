@@ -15,7 +15,7 @@ app = Flask(__name__)
 
 # Configuration
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
-database_url = os.environ.get('DATABASE_URL', 'sqlite:///data/skyvigdb.db')
+database_url = os.environ.get('DATABASE_URL', 'sqlite:///tmp/skyvigdb.db')
 app.config['SQLALCHEMY_DATABASE_URI'] = database_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -77,6 +77,7 @@ def init_database():
 
 # Call it immediately
 init_database()
+
 # Routes
 @app.route('/health')
 def health_check():
@@ -134,13 +135,7 @@ def create_case():
     except Exception as e:
         logger.error(f"Error: {str(e)}")
         return jsonify({'error': 'Database error'}), 500
-@app.errorhandler(Exception)
-def handle_error(e):
-    import traceback
-    return jsonify({
-        'error': str(e),
-        'traceback': traceback.format_exc()
-    }), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
     app.run(debug=False, host='0.0.0.0', port=port)
