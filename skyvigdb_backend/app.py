@@ -51,19 +51,69 @@ CORS(app, resources={
 })
 
 # Models
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.String(50), default='student')
-    first_name = db.Column(db.String(50))
-
 class Case(db.Model):
+    # General
     id = db.Column(db.Integer, primary_key=True)
     case_number = db.Column(db.String(50), unique=True, nullable=False)
-    current_status = db.Column(db.String(50), default='triage')
+    receipt_date = db.Column(db.DateTime)
+    seriousness = db.Column(db.String(20), default='non-serious')
+    case_type = db.Column(db.String(50))
+    current_status = db.Column(db.String(50), default='data-entry')
+    
+    # Patient
+    patient_initials = db.Column(db.String(10))
+    patient_age = db.Column(db.Integer)
+    age_unit = db.Column(db.String(10))
+    date_of_birth = db.Column(db.Date)
+    gender = db.Column(db.String(20))
+    weight = db.Column(db.Float)
+    weight_unit = db.Column(db.String(10))
+    height = db.Column(db.Float)
+    height_unit = db.Column(db.String(10))
+    medical_history = db.Column(db.Text)
+    concurrent_conditions = db.Column(db.Text)
+    
+    # Product
+    product_name = db.Column(db.String(200))
+    generic_name = db.Column(db.String(200))
+    manufacturer = db.Column(db.String(200))
+    lot_number = db.Column(db.String(100))
+    expiry_date = db.Column(db.Date)
+    dose = db.Column(db.String(50))
+    dose_unit = db.Column(db.String(20))
+    frequency = db.Column(db.String(50))
+    route = db.Column(db.String(50))
+    therapy_start_date = db.Column(db.Date)
+    therapy_stop_date = db.Column(db.Date)
+    indication = db.Column(db.String(200))
+    action_taken = db.Column(db.String(50))
+    
+    # Event
+    event_description = db.Column(db.Text)
+    onset_date = db.Column(db.Date)
+    stop_date = db.Column(db.Date)
+    outcome = db.Column(db.String(50))
+    seriousness_criteria = db.Column(db.JSON)  # Store as array
+    
+    # Reporter
+    reporter_type = db.Column(db.String(50))
+    reporter_name = db.Column(db.String(100))
+    reporter_address = db.Column(db.Text)
+    reporter_phone = db.Column(db.String(50))
+    reporter_email = db.Column(db.String(100))
+    reporter_country = db.Column(db.String(100))
+    
+    # Study
+    study_number = db.Column(db.String(100))
+    study_type = db.Column(db.String(50))
+    center_id = db.Column(db.String(50))
+    
+    # Narrative
+    case_narrative = db.Column(db.Text)
+    company_remarks = db.Column(db.Text)
+    
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'))
 # Initialize database on startup
 def init_database():
     with app.app_context():
