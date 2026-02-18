@@ -1,9 +1,13 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
 from datetime import datetime
 from sqlalchemy import text
-import os
+import os, json, xml.etree.ElementTree as ET
+from io import BytesIO
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
 
 app = Flask(__name__)
 
@@ -56,7 +60,46 @@ class Case(db.Model):
 def init():
     db.create_all()
 
-# ================= UTIL =================
+# ================= MEDDRA MOCK =================
+
+MEDDRA = [
+    {"pt": "Headache", "soc": "Nervous system disorders"},
+    {"pt": "Nausea", "soc": "Gastrointestinal disorders"},
+    {"pt": "Rash", "soc": "Skin disorders"},
+]
+
+@app.route("/api/meddra")
+def meddra():
+    q = request.args.get("q", "").lower()
+    return jsonify([m for m in MEDDRA if q in m["pt"].lower()][:20])
+
+# ================= CAUSALITY =================
+
+def who_umc(data):
+
+    time_rel = data.get("timeRelation")
+    dechallenge = data.get("dechallenge")
+    rechallenge = data.get("rechallenge")
+    alt = data.get("alternativeCauses")
+
+    if time_rel and rechallenge:
+        return "Certain"
+    if time_rel and dechallenge and not alt:
+        return "Probable"
+    if time_rel:
+        return "Possible"
+    if alt:
+        return "Unlikely"
+
+    return "Unassessable"
+
+
+@app.route("/api/causality", methods=["POST"])
+def causality():
+    result = who_umc(request.json)
+    return jsonify({"result": result})
+
+# ================= NARRATIVE =================
 
 def generate_narrative(case):
 
@@ -67,20 +110,16 @@ def generate_narrative(case):
     products = de.get("products", [])
     events = de.get("events", [])
 
-    product_names = ", ".join([p.get("name","") for p in products])
+    prod_names = ", ".join([p.get("name","") for p in products])
     event_terms = ", ".join([e.get("term","") for e in events])
 
-    narrative = f"""
-This case concerns a {patient.get('age','')} year old {patient.get('gender','')}
-patient from {triage.get('country','')} who experienced {event_terms}
-following administration of {product_names}.
+    return f"""
+A {patient.get('age','')} year old {patient.get('gender','')} patient
+experienced {event_terms} following administration of {prod_names}.
+Reported by {triage.get('reporterName','')}.
+""".strip()
 
-The case was reported by {triage.get('reporterName','')}.
-"""
-
-    return narrative.strip()
-
-# ================= ROUTES =================
+# ================= HEALTH =================
 
 @app.route("/api/health")
 def health():
@@ -90,10 +129,12 @@ def health():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
+# ================= CASE ROUTES =================
+
 @app.route("/api/cases", methods=["GET"])
 def get_cases():
-    cases = Case.query.all()
-    return jsonify([c.to_dict() for c in cases])
+    return jsonify([c.to_dict() for c in Case.query.all()])
+
 
 @app.route("/api/cases", methods=["POST"])
 def create_case():
@@ -111,6 +152,7 @@ def create_case():
     db.session.commit()
 
     return jsonify(case.to_dict())
+
 
 @app.route("/api/cases/<case_id>", methods=["PUT"])
 def update_case(case_id):
@@ -142,8 +184,74 @@ def update_case(case_id):
             case.status = "Returned to Medical"
 
     db.session.commit()
-
     return jsonify(case.to_dict())
+
+# ================= CIOMS PDF =================
+
+@app.route("/api/cioms/<case_id>")
+def cioms(case_id):
+
+    case = Case.query.get_or_404(case_id)
+
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+
+    data = [
+        ["CIOMS I FORM", case.id],
+        ["Patient", str(case.data_entry.get("patient", ""))],
+        ["Products", str(case.data_entry.get("products", ""))],
+        ["Events", str(case.data_entry.get("events", ""))],
+        ["Narrative", case.narrative or ""]
+    ]
+
+    table = Table(data, colWidths=[150, 350])
+
+    table.setStyle(TableStyle([
+        ("GRID", (0,0), (-1,-1), 1, colors.black),
+        ("BACKGROUND", (0,0), (-1,0), colors.grey)
+    ]))
+
+    doc.build([table])
+
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=f"{case.id}_CIOMS.pdf",
+        mimetype="application/pdf"
+    )
+
+# ================= E2B XML =================
+
+@app.route("/api/e2b/<case_id>")
+def e2b(case_id):
+
+    case = Case.query.get_or_404(case_id)
+
+    root = ET.Element("SafetyReport")
+
+    ET.SubElement(root, "CaseID").text = case.id
+    ET.SubElement(root, "Status").text = case.status
+
+    xml_data = ET.tostring(root)
+
+    return app.response_class(xml_data, mimetype="application/xml")
+
+# ================= DASHBOARD =================
+
+@app.route("/api/dashboard")
+def dashboard():
+
+    total = Case.query.count()
+    approved = Case.query.filter_by(status="Approved").count()
+
+    return jsonify({
+        "totalCases": total,
+        "approvedCases": approved
+    })
+
 
 if __name__ == "__main__":
     app.run()
