@@ -289,7 +289,8 @@ def update_case(case_id):
 
 
 # ============================================================================
-# STARTUP INITIALIZATION — CRITICAL FOR RENDER
+# STARTUP INITIALIZATION — CRITICAL FOR RENDER / GUNICORN
+# This guarantees tables exist before any request runs
 # ============================================================================
 
 with app.app_context():
