@@ -1,15 +1,24 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import { motion } from "framer-motion";
 
 const API =
   process.env.REACT_APP_API_URL ||
   "https://skyvigdb-backend.onrender.com/api";
 
-const USERS = [
-  { role: "Triage", step: 1 },
-  { role: "Data Entry", step: 2 },
-  { role: "Medical Review", step: 3 },
-  { role: "Quality", step: 4 }
+const ROLES = [
+  { role: "Triage", step: 1, color: "bg-blue-500" },
+  { role: "Data Entry", step: 2, color: "bg-amber-500" },
+  { role: "Medical Review", step: 3, color: "bg-purple-500" },
+  { role: "Quality", step: 4, color: "bg-emerald-600" }
+];
+
+const STAGES = [
+  { name: "Triage", step: 1, color: "bg-blue-100" },
+  { name: "Data Entry", step: 2, color: "bg-amber-100" },
+  { name: "Medical", step: 3, color: "bg-purple-100" },
+  { name: "Quality", step: 4, color: "bg-emerald-100" },
+  { name: "Approved", step: 5, color: "bg-green-100" }
 ];
 
 export default function App() {
@@ -19,46 +28,42 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({});
   const [tab, setTab] = useState("patient");
-  const [meddra, setMeddra] = useState([]);
-
-  // ================= FETCH =================
 
   useEffect(() => {
     if (user) fetchCases();
   }, [user]);
 
   const fetchCases = async () => {
-    try {
-      const res = await axios.get(API + "/cases");
-      setCases(res.data);
-    } catch (err) {
-      console.error(err);
-    }
+    const res = await axios.get(API + "/cases");
+    setCases(res.data);
   };
 
   // ================= LOGIN =================
 
   if (!user) {
     return (
-      <div style={{ padding: 40 }}>
-        <h2>SkyVigilance Training Login</h2>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-blue-200 to-purple-200">
 
-        {USERS.map(u => (
-          <button
-            key={u.role}
-            onClick={() => setUser(u)}
-            style={{ margin: 10 }}
-          >
-            {u.role}
-          </button>
-        ))}
+        <div className="bg-white p-10 rounded-2xl shadow-xl w-96">
+
+          <h1 className="text-2xl font-bold text-center mb-6">
+            SkyVigilance Training
+          </h1>
+
+          {ROLES.map(r => (
+            <button
+              key={r.role}
+              onClick={() => setUser(r)}
+              className={`w-full text-white p-3 rounded-lg mb-3 ${r.color}`}
+            >
+              {r.role}
+            </button>
+          ))}
+
+        </div>
       </div>
     );
   }
-
-  // ================= QUEUE =================
-
-  const queue = cases.filter(c => c.currentStep === user.step);
 
   // ================= OPEN CASE =================
 
@@ -71,304 +76,306 @@ export default function App() {
     if (user.step === 4) setForm(c.quality || {});
   };
 
-  // ================= NEW CASE =================
-
-  const newCase = () => {
-    setSelected(null);
-    setForm({});
-  };
-
   // ================= SUBMIT =================
 
   const submit = async () => {
 
-    try {
-
-      if (user.step === 1) {
-        await axios.post(API + "/cases", form);
-      } else {
-
-        if (!selected) {
-          alert("No case selected");
-          return;
-        }
-
-        await axios.put(
-          API + "/cases/" + selected.id,
-          form
-        );
-      }
-
-      await fetchCases();
-
-      setSelected(null);
-      setForm({});
-
-    } catch (err) {
-      console.error(err);
-      alert("Submission failed");
+    if (user.step === 1) {
+      await axios.post(API + "/cases", form);
+    } else {
+      await axios.put(API + "/cases/" + selected.id, form);
     }
+
+    fetchCases();
+    setSelected(null);
+    setForm({});
   };
 
-  // ================= MEDDRA =================
-
-  const searchMedDRA = async (q) => {
-
-    if (!q) return;
-
-    try {
-      const res = await axios.get(API + "/meddra?q=" + q);
-      setMeddra(res.data);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // ================= MAIN UI =================
+  // ================= DASHBOARD =================
 
   return (
-    <div style={{ padding: 20 }}>
+    <div className="min-h-screen bg-gray-100">
 
-      <h2>{user.role}</h2>
+      {/* HEADER */}
 
-      <button onClick={() => setUser(null)}>Logout</button>
+      <div className="bg-white shadow p-4 flex justify-between">
 
-      <h3>Queue ({queue.length})</h3>
+        <h2 className="text-xl font-semibold">
+          {user.role}
+        </h2>
 
-      {user.step === 1 && (
-        <button onClick={newCase}>New Case</button>
-      )}
+        <button
+          onClick={() => setUser(null)}
+          className="text-red-500"
+        >
+          Logout
+        </button>
 
-      {queue.map(c => (
-        <div key={c.id} style={{ marginBottom: 10 }}>
-          {c.caseNumber}
-          <button onClick={() => openCase(c)} style={{ marginLeft: 10 }}>
-            Open
-          </button>
-        </div>
-      ))}
+      </div>
 
-      {(selected || user.step === 1) && (
+      {/* PROGRESS TRACKER */}
 
-        <div style={{ marginTop: 30 }}>
+      <ProgressTracker step={user.step} />
 
-          {/* TABS */}
+      {/* KANBAN BOARD */}
 
-          <div style={{ marginBottom: 20 }}>
-            <button onClick={()=>setTab("patient")}>Patient</button>
-            <button onClick={()=>setTab("products")}>Products</button>
-            <button onClick={()=>setTab("events")}>Events</button>
-            <button onClick={()=>setTab("medical")}>Medical</button>
+      <div className="grid grid-cols-5 gap-4 p-6">
+
+        {STAGES.map(stage => (
+
+          <div key={stage.step} className={`${stage.color} p-3 rounded-lg`}>
+
+            <h3 className="font-semibold mb-2">
+              {stage.name}
+            </h3>
+
+            {cases
+              .filter(c => c.currentStep === stage.step)
+              .map(c => (
+
+                <motion.div
+                  key={c.id}
+                  whileHover={{ scale: 1.05 }}
+                  className="bg-white p-3 rounded shadow mb-2 cursor-pointer"
+                  onClick={() => openCase(c)}
+                >
+                  <div className="font-semibold">
+                    {c.caseNumber}
+                  </div>
+
+                  <div className="text-sm text-gray-500">
+                    {c.status}
+                  </div>
+
+                </motion.div>
+
+              ))}
+
           </div>
 
-          {/* PATIENT */}
+        ))}
 
-          {tab === "patient" && (
-            <div>
+      </div>
 
-              <input
-                placeholder="Initials"
-                value={form?.patient?.initials || ""}
-                onChange={e =>
-                  setForm({
-                    ...form,
-                    patient:{
-                      ...form.patient,
-                      initials:e.target.value
-                    }
-                  })
-                }
-              />
+      {/* CASE MODAL */}
 
-              <input
-                placeholder="Age"
-                value={form?.patient?.age || ""}
-                onChange={e =>
-                  setForm({
-                    ...form,
-                    patient:{
-                      ...form.patient,
-                      age:e.target.value
-                    }
-                  })
-                }
-              />
+      {selected && (
 
-              <input
-                placeholder="Gender"
-                value={form?.patient?.gender || ""}
-                onChange={e =>
-                  setForm({
-                    ...form,
-                    patient:{
-                      ...form.patient,
-                      gender:e.target.value
-                    }
-                  })
-                }
-              />
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center">
 
-            </div>
-          )}
+          <div className="bg-white p-6 rounded-xl w-2/3">
 
-          {/* PRODUCTS */}
+            <h3 className="text-lg font-semibold mb-4">
+              Case {selected.caseNumber}
+            </h3>
 
-          {tab === "products" && (
-            <div>
+            {/* TABS */}
 
-              <button
-                onClick={() =>
-                  setForm({
-                    ...form,
-                    products:[...(form.products||[]),{}]
-                  })
-                }
-              >
-                Add Product
-              </button>
+            <div className="flex gap-2 mb-4">
 
-              {(form.products||[]).map((p,i)=>(
-                <div key={i}>
-
-                  <input
-                    placeholder="Product"
-                    value={p.name || ""}
-                    onChange={e=>{
-                      const arr=[...(form.products||[])];
-                      arr[i].name=e.target.value;
-                      setForm({...form,products:arr});
-                    }}
-                  />
-
-                  <input
-                    placeholder="Dose"
-                    value={p.dose || ""}
-                    onChange={e=>{
-                      const arr=[...(form.products||[])];
-                      arr[i].dose=e.target.value;
-                      setForm({...form,products:arr});
-                    }}
-                  />
-
-                </div>
+              {["patient","products","events","medical"].map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`px-3 py-1 rounded ${
+                    tab === t ? "bg-blue-500 text-white" : "bg-gray-200"
+                  }`}
+                >
+                  {t}
+                </button>
               ))}
 
             </div>
-          )}
 
-          {/* EVENTS */}
+            {/* PATIENT TAB */}
 
-          {tab === "events" && (
-            <div>
+            {tab === "patient" && (
+              <div>
 
-              <button
-                onClick={() =>
-                  setForm({
-                    ...form,
-                    events:[...(form.events||[]),{}]
-                  })
-                }
-              >
-                Add Event
-              </button>
+                <input
+                  placeholder="Age"
+                  className="border p-2 mr-2"
+                  onChange={e =>
+                    setForm({
+                      ...form,
+                      patient:{
+                        ...form.patient,
+                        age:e.target.value
+                      }
+                    })
+                  }
+                />
 
-              {(form.events||[]).map((ev,i)=>(
-                <div key={i}>
+                <input
+                  placeholder="Gender"
+                  className="border p-2"
+                  onChange={e =>
+                    setForm({
+                      ...form,
+                      patient:{
+                        ...form.patient,
+                        gender:e.target.value
+                      }
+                    })
+                  }
+                />
 
-                  <input
-                    placeholder="Event Term"
-                    value={ev.term || ""}
-                    onChange={e=>{
-                      const arr=[...(form.events||[])];
-                      arr[i].term=e.target.value;
-                      setForm({...form,events:arr});
-                      searchMedDRA(e.target.value);
-                    }}
-                  />
+              </div>
+            )}
 
-                  <label style={{ marginLeft: 10 }}>
-                    Serious
+            {/* PRODUCTS */}
+
+            {tab === "products" && (
+              <div>
+
+                <button
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      products:[...(form.products||[]),{}]
+                    })
+                  }
+                  className="bg-blue-500 text-white px-3 py-1 rounded"
+                >
+                  Add Product
+                </button>
+
+                {(form.products||[]).map((p,i)=>(
+                  <div key={i} className="mt-2">
+
                     <input
-                      type="checkbox"
-                      checked={ev.serious || false}
+                      placeholder="Product"
+                      className="border p-2 mr-2"
+                      onChange={e=>{
+                        const arr=[...(form.products||[])];
+                        arr[i].name=e.target.value;
+                        setForm({...form,products:arr});
+                      }}
+                    />
+
+                    <input
+                      placeholder="Dose"
+                      className="border p-2"
+                      onChange={e=>{
+                        const arr=[...(form.products||[])];
+                        arr[i].dose=e.target.value;
+                        setForm({...form,products:arr});
+                      }}
+                    />
+
+                  </div>
+                ))}
+
+              </div>
+            )}
+
+            {/* EVENTS */}
+
+            {tab === "events" && (
+              <div>
+
+                <button
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      events:[...(form.events||[]),{}]
+                    })
+                  }
+                  className="bg-blue-500 text-white px-3 py-1 rounded"
+                >
+                  Add Event
+                </button>
+
+                {(form.events||[]).map((ev,i)=>(
+                  <div key={i} className="mt-2">
+
+                    <input
+                      placeholder="Event"
+                      className="border p-2 mr-2"
                       onChange={e=>{
                         const arr=[...(form.events||[])];
-                        arr[i].serious=e.target.checked;
+                        arr[i].term=e.target.value;
                         setForm({...form,events:arr});
                       }}
                     />
-                  </label>
 
-                </div>
-              ))}
+                    <label>
+                      Serious
+                      <input
+                        type="checkbox"
+                        className="ml-2"
+                        onChange={e=>{
+                          const arr=[...(form.events||[])];
+                          arr[i].serious=e.target.checked;
+                          setForm({...form,events:arr});
+                        }}
+                      />
+                    </label>
 
-              {meddra.map((m,i)=>(
-                <div key={i} style={{ fontSize: 12 }}>
-                  {m.pt} — {m.soc}
-                </div>
-              ))}
+                  </div>
+                ))}
 
-            </div>
-          )}
+              </div>
+            )}
 
-          {/* MEDICAL */}
+            {/* MEDICAL */}
 
-          {tab === "medical" && (
-            <div>
+            {tab === "medical" && (
+              <div>
+                Medical review section
+              </div>
+            )}
+
+            {/* ACTIONS */}
+
+            <div className="flex justify-end gap-2 mt-4">
 
               <button
-                onClick={async ()=>{
-                  const res = await axios.post(
-                    API + "/causality",
-                    form.medical || {}
-                  );
-
-                  setForm({
-                    ...form,
-                    medical:{
-                      ...form.medical,
-                      causality:res.data.result
-                    }
-                  });
-                }}
+                onClick={() => setSelected(null)}
+                className="px-4 py-2 bg-gray-300 rounded"
               >
-                Run Causality
+                Cancel
               </button>
 
-              <div>
-                Result: {form?.medical?.causality}
-              </div>
-
-            </div>
-          )}
-
-          {/* QUALITY */}
-
-          {user.step === 4 && (
-            <div style={{ marginTop: 20 }}>
-              <select
-                onChange={e =>
-                  setForm({
-                    ...form,
-                    finalStatus:e.target.value
-                  })
-                }
+              <button
+                onClick={submit}
+                className="px-4 py-2 bg-green-600 text-white rounded"
               >
-                <option value="">Select</option>
-                <option value="approved">Approve</option>
-                <option value="reject">Return</option>
-              </select>
-            </div>
-          )}
+                Submit
+              </button>
 
-          <div style={{ marginTop: 20 }}>
-            <button onClick={submit}>
-              Submit
-            </button>
+            </div>
+
           </div>
 
         </div>
+
       )}
+
+    </div>
+  );
+}
+
+// ================= PROGRESS TRACKER =================
+
+function ProgressTracker({ step }) {
+
+  const stages = ["Triage","Data Entry","Medical","Quality","Approved"];
+
+  return (
+    <div className="flex justify-center gap-4 p-4">
+
+      {stages.map((s,i)=>(
+        <motion.div
+          key={i}
+          className={`px-3 py-1 rounded-full ${
+            step >= i+1 ? "bg-green-500 text-white" : "bg-gray-300"
+          }`}
+          animate={{ scale: step === i+1 ? 1.2 : 1 }}
+        >
+          {s}
+        </motion.div>
+      ))}
 
     </div>
   );
