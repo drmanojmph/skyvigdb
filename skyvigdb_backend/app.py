@@ -5,16 +5,62 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from datetime import datetime
 import os
 import uuid
-import json
+
+# ============================================================================
+# APP INITIALIZATION
+# ============================================================================
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'training-secret-key-change-in-production'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///training_cases.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = 'uploads'
 
+# ============================================================================
+# DATABASE CONFIGURATION - Production Ready for Render
+# ============================================================================
+
+# Get database URL from environment (Render provides this) or use local SQLite
+database_url = os.getenv('DATABASE_URL', 'sqlite:///training_cases.db')
+
+# Handle Render's postgres:// vs postgresql:// prefix issue
+# Render uses postgres:// but SQLAlchemy requires postgresql://
+if database_url.startswith('postgres://'):
+    database_url = database_url.replace('postgres://', 'postgresql://', 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Critical for Render free tier: connection pool settings
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    'pool_pre_ping': True,      # Test connection before using (prevents cold start errors)
+    'pool_recycle': 300,        # Recycle connections every 5 minutes (300 seconds)
+    'pool_size': 5,             # Maintain 5 connections in pool
+    'max_overflow': 10,         # Allow up to 10 extra connections during peak load
+}
+
+# Add PostgreSQL-specific connect args if using PostgreSQL
+if 'postgresql' in database_url:
+    app.config['SQLALCHEMY_ENGINE_OPTIONS']['connect_args'] = {
+        'connect_timeout': 10,
+        'options': '-c statement_timeout=30000'  # 30 second query timeout
+    }
+
+# ============================================================================
+# OTHER CONFIGURATION
+# ============================================================================
+
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-for-production')
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['PERMANENT_SESSION_LIFETIME'] = 3600  # 1 hour
+app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')
+
+# Initialize extensions
 db = SQLAlchemy(app)
-CORS(app, supports_credentials=True, origins=["http://localhost:3000", "https://*.vercel.app"])
+
+# CORS configuration - more permissive for development, restrictive for production
+cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000,https://*.vercel.app').split(',')
+CORS(app, 
+     supports_credentials=True, 
+     origins=cors_origins,
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     allow_headers=["Content-Type", "Authorization"])
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -163,6 +209,26 @@ def init_training_data():
                 print(f"Created user: {u['username']} / {u['password']}")
         
         db.session.commit()
+
+# ============================================================================
+# HEALTH CHECK
+# ============================================================================
+
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Verify database connectivity."""
+    try:
+        # Test database connection
+        db.session.execute('SELECT 1')
+        db_status = 'connected'
+    except Exception as e:
+        db_status = f'error: {str(e)}'
+    
+    return jsonify({
+        'status': 'ok',
+        'database': db_status,
+        'timestamp': datetime.utcnow().isoformat()
+    })
 
 # ============================================================================
 # AUTHENTICATION ROUTES
