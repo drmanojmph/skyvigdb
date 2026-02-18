@@ -70,20 +70,21 @@ class Case(db.Model):
 # =========================
 
 def init_db():
+    # For training/demo: reset schema each deploy to avoid column mismatch
+    db.drop_all()
     db.create_all()
 
-    if not User.query.filter_by(username="triage1").first():
-        user = User(
-            username="triage1",
-            password_hash=generate_password_hash("train123"),
-            role="triage",
-        )
-        db.session.add(user)
-        db.session.commit()
+    # Seed default user
+    user = User(
+        username="triage1",
+        password_hash=generate_password_hash("train123"),
+        role="triage",
+    )
+    db.session.add(user)
+    db.session.commit()
 
 
-@app.before_first_request
-def startup():
+with app.app_context():
     init_db()
 
 
