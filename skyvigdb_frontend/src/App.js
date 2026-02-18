@@ -18,13 +18,9 @@ function App() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
-  
   const [triageData, setTriageData] = useState({
-    receiptDate: '',
     reporterName: '',
     reporterContact: '',
-    reporterCountry: '',
     productName: '',
     eventDescription: ''
   });
@@ -106,15 +102,12 @@ function App() {
       const response = await axios.get(`${API_URL}/cases`);
       setCases(response.data);
     } catch (err) {
-      console.error('Failed to fetch cases:', err);
-      setError('Failed to load cases. Please check your connection.');
+      console.error('Failed to fetch cases');
     }
   };
 
   const login = async (e) => {
     e.preventDefault();
-    setError('');
-    setSuccessMessage('');
     
     const account = TRAINING_ACCOUNTS.find(
       acc => acc.username === username && acc.password === password
@@ -128,6 +121,7 @@ function App() {
       };
       setUser(userData);
       localStorage.setItem('skyvigdb_user', JSON.stringify(userData));
+      setError('');
       fetchCases();
       return;
     }
@@ -155,8 +149,6 @@ function App() {
     localStorage.removeItem('skyvigdb_user');
     setUsername('');
     setPassword('');
-    setError('');
-    setSuccessMessage('');
   };
 
   const handleInputChange = (e) => {
@@ -191,152 +183,88 @@ function App() {
 
   const submitTriage = async (e) => {
     e.preventDefault();
-    setError('');
-    setSuccessMessage('');
-    
     try {
       const newCase = {
         ...triageData,
         status: 'Triage Complete',
         currentStep: 2,
         caseNumber: `PV-${Date.now()}`,
-        createdAt: new Date().toISOString()
+        receiptDate: new Date().toISOString()
       };
-      
-      console.log('Submitting triage case:', newCase);
-      
-      const response = await axios.post(`${API_URL}/cases`, newCase);
-      console.log('Triage submitted successfully:', response.data);
-      
+      await axios.post(`${API_URL}/cases`, newCase);
       setTriageData({
-        receiptDate: '',
         reporterName: '',
         reporterContact: '',
-        reporterCountry: '',
         productName: '',
         eventDescription: ''
       });
-      
-      setSuccessMessage('Case created successfully and sent to Data Entry!');
       fetchCases();
-      
-      setTimeout(() => {
-        setView('queue');
-        setSuccessMessage('');
-      }, 2000);
-      
+      alert('Case created and sent to Data Entry!');
     } catch (err) {
-      console.error('Failed to create case:', err);
-      setError(`Failed to create case: ${err.response?.data?.message || err.message}`);
+      console.error('Failed to create case');
     }
   };
 
   const submitDataEntry = async (e) => {
     e.preventDefault();
-    setError('');
-    setSuccessMessage('');
-    
     try {
-      const updateData = {
+      await axios.put(`${API_URL}/cases/${selectedCase.id}`, {
         ...formData,
         status: 'Data Entry Complete',
         currentStep: 3
-      };
-      
-      console.log('Submitting data entry:', updateData);
-      
-      await axios.put(`${API_URL}/cases/${selectedCase.id}`, updateData);
-      
-      setSuccessMessage('Case completed and sent to Medical Review!');
+      });
+      setView('queue');
+      setSelectedCase(null);
       fetchCases();
-      
-      setTimeout(() => {
-        setView('queue');
-        setSelectedCase(null);
-        setSuccessMessage('');
-      }, 2000);
-      
+      alert('Case completed and sent to Medical Review!');
     } catch (err) {
-      console.error('Failed to update case:', err);
-      setError(`Failed to update case: ${err.response?.data?.message || err.message}`);
+      console.error('Failed to update case');
     }
   };
 
   const submitMedicalReview = async (e) => {
     e.preventDefault();
-    setError('');
-    setSuccessMessage('');
-    
     try {
-      const updateData = {
+      await axios.put(`${API_URL}/cases/${selectedCase.id}`, {
         ...medicalReview,
         status: 'Medical Review Complete',
         currentStep: 4
-      };
-      
-      console.log('Submitting medical review:', updateData);
-      
-      await axios.put(`${API_URL}/cases/${selectedCase.id}`, updateData);
-      
-      setSuccessMessage('Case reviewed and sent to Quality Review!');
+      });
+      setView('queue');
+      setSelectedCase(null);
       fetchCases();
-      
-      setTimeout(() => {
-        setView('queue');
-        setSelectedCase(null);
-        setSuccessMessage('');
-      }, 2000);
-      
+      alert('Case reviewed and sent to Quality Review!');
     } catch (err) {
-      console.error('Failed to submit medical review:', err);
-      setError(`Failed to submit review: ${err.response?.data?.message || err.message}`);
+      console.error('Failed to submit medical review');
     }
   };
 
   const submitQualityReview = async (e) => {
     e.preventDefault();
-    setError('');
-    setSuccessMessage('');
-    
     try {
-      const updateData = {
+      await axios.put(`${API_URL}/cases/${selectedCase.id}`, {
         ...qualityReview,
         status: qualityReview.finalStatus === 'approved' ? 'Approved' : 'Rejected',
         currentStep: qualityReview.finalStatus === 'approved' ? 5 : 3
-      };
-      
-      console.log('Submitting quality review:', updateData);
-      
-      await axios.put(`${API_URL}/cases/${selectedCase.id}`, updateData);
-      
-      setSuccessMessage(`Case ${qualityReview.finalStatus === 'approved' ? 'approved' : 'rejected'} successfully!`);
+      });
+      setView('queue');
+      setSelectedCase(null);
       fetchCases();
-      
-      setTimeout(() => {
-        setView('queue');
-        setSelectedCase(null);
-        setSuccessMessage('');
-      }, 2000);
-      
+      alert(`Case ${qualityReview.finalStatus === 'approved' ? 'approved' : 'rejected'}!`);
     } catch (err) {
-      console.error('Failed to submit quality review:', err);
-      setError(`Failed to submit review: ${err.response?.data?.message || err.message}`);
+      console.error('Failed to submit quality review');
     }
   };
 
   const startProcessing = (caseItem) => {
     setSelectedCase(caseItem);
-    setError('');
-    setSuccessMessage('');
-    
     if (user.role === 'Data Entry') {
       setFormData(prev => ({
         ...prev,
         productName: caseItem.productName || '',
         eventDescription: caseItem.eventDescription || '',
         reporterName: caseItem.reporterName || '',
-        receiptDate: caseItem.receiptDate || '',
-        reporterCountry: caseItem.reporterCountry || ''
+        receiptDate: caseItem.receiptDate || ''
       }));
     }
     setView('process');
@@ -382,14 +310,14 @@ function App() {
     marginBottom: '20px'
   };
 
-  const accountBtnStyle = (step) => ({
+  const accountBtnStyle = (color) => ({
     padding: '15px',
     border: 'none',
     borderRadius: '10px',
     cursor: 'pointer',
-    background: step === 1 ? '#007bff' : 
-                step === 2 ? '#28a745' : 
-                step === 3 ? '#6f42c1' : '#fd7e14',
+    background: color === 'blue' ? '#007bff' : 
+                color === 'green' ? '#28a745' : 
+                color === 'purple' ? '#6f42c1' : '#fd7e14',
     color: 'white',
     fontWeight: 'bold',
     display: 'flex',
@@ -483,15 +411,6 @@ function App() {
     alignItems: 'center'
   };
 
-  const alertStyle = (type) => ({
-    padding: '15px',
-    borderRadius: '5px',
-    marginBottom: '20px',
-    background: type === 'error' ? '#f8d7da' : '#d4edda',
-    color: type === 'error' ? '#721c24' : '#155724',
-    border: `1px solid ${type === 'error' ? '#f5c6cb' : '#c3e6cb'}`
-  });
-
   if (!user) {
     return (
       <div style={loginContainerStyle}>
@@ -509,29 +428,22 @@ function App() {
           </h2>
           
           <div style={{ marginBottom: '20px' }}>
-            <h4 style={{ marginBottom: '10px', color: '#666' }}>Quick Login (Click to fill credentials)</h4>
+            <h4 style={{ marginBottom: '10px', color: '#666' }}>Quick Login (Training Accounts)</h4>
             <div style={accountGridStyle}>
               {TRAINING_ACCOUNTS.map(acc => (
                 <button
                   key={acc.username}
-                  type="button"
-                  style={accountBtnStyle(acc.step)}
-                  onClick={() => { 
-                    setUsername(acc.username); 
-                    setPassword(acc.password); 
-                  }}
+                  style={accountBtnStyle(acc.color)}
+                  onClick={() => { setUsername(acc.username); setPassword(acc.password); }}
                 >
                   <span>Step {acc.step}</span>
                   <span style={{ fontSize: '12px', marginTop: '5px' }}>{acc.role}</span>
                 </button>
               ))}
             </div>
-            <p style={{ fontSize: '12px', color: '#666', textAlign: 'center', marginTop: '5px' }}>
-              Then click "Sign In" below
-            </p>
           </div>
 
-          {error && <div style={alertStyle('error')}>{error}</div>}
+          {error && <div style={{ color: '#e74c3c', textAlign: 'center', marginBottom: '20px' }}>{error}</div>}
           
           <form onSubmit={login}>
             <input
@@ -580,29 +492,9 @@ function App() {
           </div>
 
           <div style={{ background: 'white', padding: '30px', borderRadius: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-            <h2 style={{ color: '#333', marginBottom: '20px' }}>New Case Triage (Minimum Criteria)</h2>
-            
-            {error && <div style={alertStyle('error')}>{error}</div>}
-            {successMessage && <div style={alertStyle('success')}>{successMessage}</div>}
+            <h2 style={{ color: '#333', marginBottom: '20px' }}>New Case Triage (4 Minimum Criteria)</h2>
             
             <form onSubmit={submitTriage}>
-              <div style={sectionStyle}>
-                <h3 style={sectionTitleStyle}>Initial Receipt Information</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                  <div>
-                    <label style={labelStyle}>Initial Receipt Date (Day Zero) *</label>
-                    <input
-                      type="datetime-local"
-                      name="receiptDate"
-                      value={triageData.receiptDate}
-                      onChange={handleTriageChange}
-                      style={inputStyle}
-                      required
-                    />
-                  </div>
-                </div>
-              </div>
-
               <div style={sectionStyle}>
                 <h3 style={sectionTitleStyle}>1. Reporter Information</h3>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
@@ -630,18 +522,6 @@ function App() {
                       placeholder="Phone or email"
                     />
                   </div>
-                </div>
-                <div style={{ marginTop: '15px' }}>
-                  <label style={labelStyle}>Reporter Country *</label>
-                  <input
-                    type="text"
-                    name="reporterCountry"
-                    value={triageData.reporterCountry}
-                    onChange={handleTriageChange}
-                    style={inputStyle}
-                    required
-                    placeholder="Country of reporter"
-                  />
                 </div>
               </div>
 
@@ -724,8 +604,6 @@ function App() {
             </button>
           </div>
           
-          {successMessage && <div style={alertStyle('success')}>{successMessage}</div>}
-          
           {getCasesForRole().length === 0 ? (
             <p style={{ color: '#666', textAlign: 'center', padding: '40px' }}>
               No new reports pending triage. Click "New Case Triage" to create a case.
@@ -778,9 +656,6 @@ function App() {
               </button>
             </div>
           </div>
-
-          {error && <div style={alertStyle('error')}>{error}</div>}
-          {successMessage && <div style={alertStyle('success')}>{successMessage}</div>}
 
           <form onSubmit={submitDataEntry} style={{ background: 'white', padding: '30px', borderRadius: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
             <div style={sectionStyle}>
@@ -961,9 +836,6 @@ function App() {
             </div>
           </div>
 
-          {error && <div style={alertStyle('error')}>{error}</div>}
-          {successMessage && <div style={alertStyle('success')}>{successMessage}</div>}
-
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
             <div style={{ background: 'white', padding: '20px', borderRadius: '10px' }}>
               <h3 style={{ color: '#333', marginBottom: '15px' }}>Case Summary</h3>
@@ -1080,9 +952,6 @@ function App() {
             </div>
           </div>
 
-          {error && <div style={alertStyle('error')}>{error}</div>}
-          {successMessage && <div style={alertStyle('success')}>{successMessage}</div>}
-
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
             <div style={{ background: 'white', padding: '20px', borderRadius: '10px' }}>
               <h3 style={{ color: '#333', marginBottom: '15px' }}>Case Details Review</h3>
@@ -1167,8 +1036,8 @@ function App() {
                     required
                   >
                     <option value="">Select</option>
-                    <option value="approved">Approve Case</option>
-                    <option value="rejected">Reject - Send Back</option>
+                    <option value="approved">✓ Approve Case</option>
+                    <option value="rejected">✗ Reject - Send Back</option>
                   </select>
                 </div>
 
@@ -1241,15 +1110,3 @@ function App() {
 }
 
 export default App;
-'''
-
-print("Corrected App.js created successfully!")
-print(f"Total length: {len(app_js_corrected)} characters")
-print("\nKey fixes made:")
-print("1. Added type=\"button\" to quick login buttons to prevent form submission")
-print("2. Added receiptDate (Day Zero) to Triage form")
-print("3. Added reporterCountry to Triage form")
-print("4. Added better error handling and success messages")
-print("5. Added console logging for debugging")
-print("6. Added visual feedback after form submission")
-print("7. Fixed form submission logic with proper error handling")
