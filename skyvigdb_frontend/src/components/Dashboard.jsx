@@ -1,86 +1,80 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 export const Dashboard = ({ user }) => {
-  const [stats, setStats] = useState(null);
   const [cases, setCases] = useState([]);
+  const navigate = useNavigate();
 
+  // Load cases when dashboard opens
   useEffect(() => {
-    fetch('/api/dashboard', { credentials: 'include' })
-      .then(r => r.json())
-      .then(setStats);
-    
-    fetch('/api/cases', { credentials: 'include' })
-      .then(r => r.json())
-      .then(setCases);
+    fetchCases();
   }, []);
 
-  const getStepColor = (step) => {
-    const colors = {
-      triage: 'blue',
-      dataentry: 'green',
-      medical: 'purple',
-      quality: 'orange',
-      completed: 'gray'
-    };
-    return colors[step] || 'default';
+  const fetchCases = async () => {
+    const response = await fetch('/api/cases');
+    const data = await response.json();
+    setCases(data);
+  };
+
+  // Filter cases based on user's role
+  const getCasesForRole = () => {
+    switch(user?.role) {
+      case 'Triage':
+        return cases.filter(c => c.status === 'New');
+      case 'Data Entry':
+        return cases.filter(c => c.status === 'Triage Complete');
+      case 'Medical Review':
+        return cases.filter(c => c.status === 'Data Entry Complete');
+      case 'Quality Review':
+        return cases.filter(c => c.status === 'Medical Review Complete');
+      default:
+        return [];
+    }
+  };
+
+  const startCase = (caseId) => {
+    // Navigate to case processing page
+    navigate(`/case/${caseId}`);
   };
 
   return (
     <div className="dashboard">
       <header>
-        <h1>Welcome, {user.fullName}</h1>
-        <span className={`role-badge ${user.role}`}>{user.role}</span>
+        <h1>PV Training - {user?.role} Dashboard</h1>
+        <span>Welcome, {user?.username}</span>
       </header>
 
-      {stats && (
-        <div className="stats-grid">
-          <div className="stat-card">
-            <h4>Total Cases</h4>
-            <span>{stats.totalCases}</span>
-          </div>
-          <div className="stat-card blue">
-            <h4>In Triage</h4>
-            <span>{stats.inTriage}</span>
-          </div>
-          <div className="stat-card green">
-            <h4>Data Entry</h4>
-            <span>{stats.inDataEntry}</span>
-          </div>
-          <div className="stat-card purple">
-            <h4>Medical Review</h4>
-            <span>{stats.inMedicalReview}</span>
-          </div>
-          <div className="stat-card orange">
-            <h4>Quality Review</h4>
-            <span>{stats.inQualityReview}</span>
-          </div>
-          <div className="stat-card gray">
-            <h4>Completed</h4>
-            <span>{stats.completed}</span>
-          </div>
-        </div>
-      )}
-
-      <div className="actions">
-        {user.role === 'triage' && (
-          <Link to="/case/new" className="btn-primary">Create New Case</Link>
+      <div className="queue-section">
+        <h2>Cases Waiting for {user?.role}</h2>
+        
+        {getCasesForRole().length === 0 ? (
+          <p>No cases available. Great job!</p>
+        ) : (
+          <table className="cases-table">
+            <thead>
+              <tr>
+                <th>Case ID</th>
+                <th>Patient</th>
+                <th>Received Date</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {getCasesForRole().map(c => (
+                <tr key={c.id}>
+                  <td>{c.caseId}</td>
+                  <td>{c.patientInitials || 'Pending'}</td>
+                  <td>{c.receivedDate}</td>
+                  <td>
+                    <button onClick={() => startCase(c.id)}>
+                      Start Processing
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
-      </div>
-
-      <h2>Cases Requiring Attention</h2>
-      <div className="case-list">
-        {cases.map(c => (
-          <div key={c.id} className={`case-card ${getStepColor(c.currentStep)}`}>
-            <div className="case-header">
-              <h4>{c.id}</h4>
-              <span className={`step-badge ${c.currentStep}`}>{c.currentStep}</span>
-            </div>
-            <p><strong>Product:</strong> {c.triage.productName}</p>
-            <p><strong>Event:</strong> {c.triage.eventDescription?.substring(0, 50)}...</p>
-            <Link to={`/case/${c.id}`} className="btn-secondary">View Case</Link>
-          </div>
-        ))}
       </div>
     </div>
   );
