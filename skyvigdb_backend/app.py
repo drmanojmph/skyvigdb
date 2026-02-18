@@ -22,7 +22,24 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+# =========================
+# CORS — FIXED FOR PUT/OPTIONS
+# =========================
+
+CORS(
+    app,
+    resources={r"/api/*": {"origins": "*"}},
+    supports_credentials=True,
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
+)
+
+
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
 
 # =========================
 # MODELS
@@ -49,6 +66,20 @@ class Case(db.Model):
     product_name = db.Column(db.String(200))
     event_description = db.Column(db.Text)
 
+    patient_initials = db.Column(db.String(10))
+    patient_age = db.Column(db.Integer)
+    patient_gender = db.Column(db.String(10))
+
+    causality_assessment = db.Column(db.String(50))
+    listedness = db.Column(db.String(20))
+    medical_comments = db.Column(db.Text)
+
+    completeness_check = db.Column(db.Boolean, default=False)
+    consistency_check = db.Column(db.Boolean, default=False)
+    regulatory_compliance = db.Column(db.Boolean, default=False)
+    quality_comments = db.Column(db.Text)
+    final_status = db.Column(db.String(20))
+
     def to_dict(self):
         return {
             "id": self.id,
@@ -70,16 +101,15 @@ class Case(db.Model):
 # =========================
 
 def init_db():
-    # For training/demo: reset schema each deploy to avoid column mismatch
     db.drop_all()
     db.create_all()
 
-    # Seed default user
     user = User(
         username="triage1",
         password_hash=generate_password_hash("train123"),
         role="triage",
     )
+
     db.session.add(user)
     db.session.commit()
 
@@ -89,7 +119,7 @@ with app.app_context():
 
 
 # =========================
-# ROUTES
+# HEALTH CHECK
 # =========================
 
 @app.route("/api/health")
@@ -100,6 +130,10 @@ def health():
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)})
 
+
+# =========================
+# CASE ROUTES
+# =========================
 
 @app.route("/api/cases", methods=["GET"])
 def get_cases():
@@ -131,6 +165,44 @@ def create_case():
         db.session.commit()
 
         return jsonify(case.to_dict()), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/cases/<case_id>", methods=["PUT"])
+def update_case(case_id):
+    try:
+        case = Case.query.get_or_404(case_id)
+        data = request.get_json()
+
+        if case.current_step == 2:
+            case.patient_initials = data.get("patientInitials")
+            case.patient_age = data.get("patientAge")
+            case.patient_gender = data.get("patientGender")
+            case.current_step = 3
+            case.status = "Data Entry Complete"
+
+        elif case.current_step == 3:
+            case.causality_assessment = data.get("causalityAssessment")
+            case.listedness = data.get("listedness")
+            case.medical_comments = data.get("medicalComments")
+            case.current_step = 4
+            case.status = "Medical Review Complete"
+
+        elif case.current_step == 4:
+            case.final_status = data.get("finalStatus")
+
+            if data.get("finalStatus") == "approved":
+                case.current_step = 5
+                case.status = "Approved"
+            else:
+                case.current_step = 3
+                case.status = "Rejected - Back to Medical"
+
+        db.session.commit()
+        return jsonify(case.to_dict())
 
     except Exception as e:
         db.session.rollback()
