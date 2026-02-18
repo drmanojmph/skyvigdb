@@ -6,11 +6,15 @@ from datetime import datetime
 from sqlalchemy import text
 import os
 
+# =========================================================
+# APP INITIALIZATION
+# =========================================================
+
 app = Flask(__name__)
 
-# =========================
-# DATABASE CONFIG
-# =========================
+# =========================================================
+# DATABASE CONFIG (Render / PostgreSQL Ready)
+# =========================================================
 
 database_url = os.getenv("DATABASE_URL", "sqlite:///training_cases.db")
 
@@ -22,28 +26,25 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-# =========================
-# CORS — FIXED FOR PUT/OPTIONS
-# =========================
+# =========================================================
+# CORS — Production Safe
+# =========================================================
 
 CORS(
     app,
     resources={r"/api/*": {"origins": "*"}},
-    supports_credentials=True,
     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
-
 
 @app.before_request
 def handle_preflight():
     if request.method == "OPTIONS":
         return jsonify({"status": "ok"}), 200
 
-
-# =========================
+# =========================================================
 # MODELS
-# =========================
+# =========================================================
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -95,50 +96,54 @@ class Case(db.Model):
             "eventDescription": self.event_description,
         }
 
-
-# =========================
-# DATABASE INITIALIZATION
-# =========================
+# =========================================================
+# DATABASE INITIALIZATION (SAFE — NO DATA LOSS)
+# =========================================================
 
 def init_db():
-    db.drop_all()
     db.create_all()
 
-    user = User(
-        username="triage1",
-        password_hash=generate_password_hash("train123"),
-        role="triage",
-    )
-
-    db.session.add(user)
-    db.session.commit()
+    # Seed default training user if not exists
+    if not User.query.filter_by(username="triage1").first():
+        user = User(
+            username="triage1",
+            password_hash=generate_password_hash("train123"),
+            role="triage",
+        )
+        db.session.add(user)
+        db.session.commit()
 
 
 with app.app_context():
     init_db()
 
-
-# =========================
+# =========================================================
 # HEALTH CHECK
-# =========================
+# =========================================================
 
 @app.route("/api/health")
 def health():
     try:
         db.session.execute(text("SELECT 1"))
-        return jsonify({"status": "ok", "database": "connected"})
+        return jsonify({
+            "status": "ok",
+            "database": "connected",
+            "timestamp": datetime.utcnow().isoformat()
+        })
     except Exception as e:
-        return jsonify({"status": "error", "error": str(e)})
+        return jsonify({
+            "status": "error",
+            "error": str(e)
+        }), 500
 
-
-# =========================
+# =========================================================
 # CASE ROUTES
-# =========================
+# =========================================================
 
 @app.route("/api/cases", methods=["GET"])
 def get_cases():
     try:
-        cases = Case.query.all()
+        cases = Case.query.order_by(Case.created_at.desc()).all()
         return jsonify([c.to_dict() for c in cases])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -177,6 +182,7 @@ def update_case(case_id):
         case = Case.query.get_or_404(case_id)
         data = request.get_json()
 
+        # Step 2 → Data Entry
         if case.current_step == 2:
             case.patient_initials = data.get("patientInitials")
             case.patient_age = data.get("patientAge")
@@ -184,6 +190,7 @@ def update_case(case_id):
             case.current_step = 3
             case.status = "Data Entry Complete"
 
+        # Step 3 → Medical Review
         elif case.current_step == 3:
             case.causality_assessment = data.get("causalityAssessment")
             case.listedness = data.get("listedness")
@@ -191,6 +198,7 @@ def update_case(case_id):
             case.current_step = 4
             case.status = "Medical Review Complete"
 
+        # Step 4 → Quality
         elif case.current_step == 4:
             case.final_status = data.get("finalStatus")
 
@@ -209,9 +217,9 @@ def update_case(case_id):
         return jsonify({"error": str(e)}), 500
 
 
-# =========================
-# LOCAL RUN
-# =========================
+# =========================================================
+# LOCAL RUN (Render uses gunicorn)
+# =========================================================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
