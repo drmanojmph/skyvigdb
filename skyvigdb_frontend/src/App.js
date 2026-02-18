@@ -19,10 +19,12 @@ function App() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [triageData, setTriageData] = useState({
-    reporterName: '',
-    reporterContact: '',
-    productName: '',
-    eventDescription: ''
+  receiptDate: '',      
+  reporterName: '',
+  reporterContact: '',
+  reporterCountry: '',  
+  productName: '',
+  eventDescription: ''
   });
 
   const [formData, setFormData] = useState({
