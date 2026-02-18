@@ -3,6 +3,22 @@ import axios from 'axios';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
+const TRAINING_ACCOUNTS = [
+  { username: 'triage1', password: 'train123', role: 'Triage', step: 1 },
+  { username: 'dataentry1', password: 'train123', role: 'Data Entry', step: 2 },
+  { username: 'medical1', password: 'train123', role: 'Medical Review', step: 3 },
+  { username: 'quality1', password: 'train123', role: 'Quality Review', step: 4 },
+];
+
+function App() {
+  // ... all your states and functions ...
+  
+  return (
+    // ... all your JSX ...
+  );
+}
+
+export default App;
 function App() {
   const [user, setUser] = useState(null);
   const [cases, setCases] = useState([]);
@@ -787,13 +803,6 @@ function App() {
         )}
       </div>
     </div>
-const TRAINING_ACCOUNTS = [
-  { username: 'triage1', password: 'train123', role: 'Triage', step: 1 },
-  { username: 'dataentry1', password: 'train123', role: 'Data Entry', step: 2 },
-  { username: 'medical1', password: 'train123', role: 'Medical Review', step: 3 },
-  { username: 'quality1', password: 'train123', role: 'Quality Review', step: 4 },
-];
-  );
-}
+
 
 export default App;
