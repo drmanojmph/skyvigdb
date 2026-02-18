@@ -1,85 +1,41 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
-from werkzeug.security import generate_password_hash
 from datetime import datetime
 from sqlalchemy import text
 import os
 
-# =========================================================
-# APP INITIALIZATION
-# =========================================================
-
 app = Flask(__name__)
 
-# =========================================================
-# DATABASE CONFIG (Render / PostgreSQL Ready)
-# =========================================================
+# ================= DATABASE =================
 
-database_url = os.getenv("DATABASE_URL", "sqlite:///training_cases.db")
+db_url = os.getenv("DATABASE_URL", "sqlite:///local.db")
 
-if database_url.startswith("postgres://"):
-    database_url = database_url.replace("postgres://", "postgresql://", 1)
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-# =========================================================
-# CORS — Production Safe
-# =========================================================
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-CORS(
-    app,
-    resources={r"/api/*": {"origins": "*"}},
-    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
-)
-
-@app.before_request
-def handle_preflight():
-    if request.method == "OPTIONS":
-        return jsonify({"status": "ok"}), 200
-
-# =========================================================
-# MODELS
-# =========================================================
-
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(50), unique=True, nullable=False)
-    password_hash = db.Column(db.String(200), nullable=False)
-    role = db.Column(db.String(20), nullable=False)
-
+# ================= MODELS =================
 
 class Case(db.Model):
-    id = db.Column(db.String(50), primary_key=True)
+    id = db.Column(db.String, primary_key=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     current_step = db.Column(db.Integer, default=1)
     status = db.Column(db.String(50), default="New")
 
-    receipt_date = db.Column(db.String(20))
-    reporter_name = db.Column(db.String(100))
-    reporter_contact = db.Column(db.String(100))
-    reporter_country = db.Column(db.String(50))
-    product_name = db.Column(db.String(200))
-    event_description = db.Column(db.Text)
+    triage = db.Column(db.JSON)
+    data_entry = db.Column(db.JSON)
+    medical = db.Column(db.JSON)
+    quality = db.Column(db.JSON)
 
-    patient_initials = db.Column(db.String(10))
-    patient_age = db.Column(db.Integer)
-    patient_gender = db.Column(db.String(10))
-
-    causality_assessment = db.Column(db.String(50))
-    listedness = db.Column(db.String(20))
-    medical_comments = db.Column(db.Text)
-
-    completeness_check = db.Column(db.Boolean, default=False)
-    consistency_check = db.Column(db.Boolean, default=False)
-    regulatory_compliance = db.Column(db.Boolean, default=False)
-    quality_comments = db.Column(db.Text)
-    final_status = db.Column(db.String(20))
+    narrative = db.Column(db.Text)
 
     def to_dict(self):
         return {
@@ -87,140 +43,107 @@ class Case(db.Model):
             "caseNumber": self.id,
             "currentStep": self.current_step,
             "status": self.status,
-            "createdAt": self.created_at.isoformat() if self.created_at else None,
-            "receiptDate": self.receipt_date,
-            "reporterName": self.reporter_name,
-            "reporterContact": self.reporter_contact,
-            "reporterCountry": self.reporter_country,
-            "productName": self.product_name,
-            "eventDescription": self.event_description,
+            "triage": self.triage,
+            "dataEntry": self.data_entry,
+            "medical": self.medical,
+            "quality": self.quality,
+            "narrative": self.narrative
         }
 
-# =========================================================
-# DATABASE INITIALIZATION (SAFE — NO DATA LOSS)
-# =========================================================
+# ================= INIT =================
 
-def init_db():
+@app.before_request
+def init():
     db.create_all()
 
-    # Seed default training user if not exists
-    if not User.query.filter_by(username="triage1").first():
-        user = User(
-            username="triage1",
-            password_hash=generate_password_hash("train123"),
-            role="triage",
-        )
-        db.session.add(user)
-        db.session.commit()
+# ================= UTIL =================
 
+def generate_narrative(case):
 
-with app.app_context():
-    init_db()
+    triage = case.triage or {}
+    de = case.data_entry or {}
 
-# =========================================================
-# HEALTH CHECK
-# =========================================================
+    patient = de.get("patient", {})
+    products = de.get("products", [])
+    events = de.get("events", [])
+
+    product_names = ", ".join([p.get("name","") for p in products])
+    event_terms = ", ".join([e.get("term","") for e in events])
+
+    narrative = f"""
+This case concerns a {patient.get('age','')} year old {patient.get('gender','')}
+patient from {triage.get('country','')} who experienced {event_terms}
+following administration of {product_names}.
+
+The case was reported by {triage.get('reporterName','')}.
+"""
+
+    return narrative.strip()
+
+# ================= ROUTES =================
 
 @app.route("/api/health")
 def health():
     try:
         db.session.execute(text("SELECT 1"))
-        return jsonify({
-            "status": "ok",
-            "database": "connected",
-            "timestamp": datetime.utcnow().isoformat()
-        })
+        return jsonify({"status": "ok", "database": "connected"})
     except Exception as e:
-        return jsonify({
-            "status": "error",
-            "error": str(e)
-        }), 500
-
-# =========================================================
-# CASE ROUTES
-# =========================================================
+        return jsonify({"status": "error", "message": str(e)})
 
 @app.route("/api/cases", methods=["GET"])
 def get_cases():
-    try:
-        cases = Case.query.order_by(Case.created_at.desc()).all()
-        return jsonify([c.to_dict() for c in cases])
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
+    cases = Case.query.all()
+    return jsonify([c.to_dict() for c in cases])
 
 @app.route("/api/cases", methods=["POST"])
 def create_case():
-    try:
-        data = request.get_json()
 
-        case = Case(
-            id="PV-" + str(int(datetime.now().timestamp())),
-            current_step=2,
-            status="Triage Complete",
-            receipt_date=data.get("receiptDate"),
-            reporter_name=data.get("reporterName"),
-            reporter_contact=data.get("reporterContact"),
-            reporter_country=data.get("reporterCountry"),
-            product_name=data.get("productName"),
-            event_description=data.get("eventDescription"),
-        )
+    data = request.json
 
-        db.session.add(case)
-        db.session.commit()
+    case = Case(
+        id="PV-" + str(int(datetime.utcnow().timestamp())),
+        current_step=2,
+        status="Triage Complete",
+        triage=data
+    )
 
-        return jsonify(case.to_dict()), 201
+    db.session.add(case)
+    db.session.commit()
 
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-
+    return jsonify(case.to_dict())
 
 @app.route("/api/cases/<case_id>", methods=["PUT"])
 def update_case(case_id):
-    try:
-        case = Case.query.get_or_404(case_id)
-        data = request.get_json()
 
-        # Step 2 → Data Entry
-        if case.current_step == 2:
-            case.patient_initials = data.get("patientInitials")
-            case.patient_age = data.get("patientAge")
-            case.patient_gender = data.get("patientGender")
+    case = Case.query.get_or_404(case_id)
+    data = request.json
+
+    step = case.current_step
+
+    if step == 2:
+        case.data_entry = data
+        case.current_step = 3
+        case.status = "Data Entry Complete"
+
+    elif step == 3:
+        case.medical = data
+        case.narrative = generate_narrative(case)
+        case.current_step = 4
+        case.status = "Medical Review Complete"
+
+    elif step == 4:
+        case.quality = data
+
+        if data.get("finalStatus") == "approved":
+            case.current_step = 5
+            case.status = "Approved"
+        else:
             case.current_step = 3
-            case.status = "Data Entry Complete"
+            case.status = "Returned to Medical"
 
-        # Step 3 → Medical Review
-        elif case.current_step == 3:
-            case.causality_assessment = data.get("causalityAssessment")
-            case.listedness = data.get("listedness")
-            case.medical_comments = data.get("medicalComments")
-            case.current_step = 4
-            case.status = "Medical Review Complete"
+    db.session.commit()
 
-        # Step 4 → Quality
-        elif case.current_step == 4:
-            case.final_status = data.get("finalStatus")
-
-            if data.get("finalStatus") == "approved":
-                case.current_step = 5
-                case.status = "Approved"
-            else:
-                case.current_step = 3
-                case.status = "Rejected - Back to Medical"
-
-        db.session.commit()
-        return jsonify(case.to_dict())
-
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
-
-
-# =========================================================
-# LOCAL RUN (Render uses gunicorn)
-# =========================================================
+    return jsonify(case.to_dict())
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run()
