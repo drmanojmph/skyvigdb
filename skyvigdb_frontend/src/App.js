@@ -435,6 +435,7 @@ function App() {
               {TRAINING_ACCOUNTS.map(acc => (
                 <button
                   key={acc.username}
+                  type="button"
                   style={accountBtnStyle(acc.color)}
                   onClick={() => { setUsername(acc.username); setPassword(acc.password); }}
                 >
