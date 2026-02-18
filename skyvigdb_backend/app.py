@@ -22,10 +22,6 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-# =========================
-# CORS
-# =========================
-
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 # =========================
@@ -37,7 +33,6 @@ class User(db.Model):
     username = db.Column(db.String(50), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
     role = db.Column(db.String(20), nullable=False)
-    full_name = db.Column(db.String(100))
 
 
 class Case(db.Model):
@@ -69,8 +64,9 @@ class Case(db.Model):
             "eventDescription": self.event_description,
         }
 
+
 # =========================
-# STARTUP INIT (CRITICAL)
+# DATABASE INITIALIZATION
 # =========================
 
 def init_db():
@@ -81,14 +77,15 @@ def init_db():
             username="triage1",
             password_hash=generate_password_hash("train123"),
             role="triage",
-            full_name="Triage Trainee",
         )
         db.session.add(user)
         db.session.commit()
 
 
-with app.app_context():
+@app.before_first_request
+def startup():
     init_db()
+
 
 # =========================
 # ROUTES
@@ -140,7 +137,7 @@ def create_case():
 
 
 # =========================
-# LOCAL RUN (Render ignores)
+# LOCAL RUN
 # =========================
 
 if __name__ == "__main__":
