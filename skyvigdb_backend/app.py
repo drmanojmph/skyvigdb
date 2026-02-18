@@ -1,13 +1,13 @@
 from flask import Flask, request, jsonify, send_file
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
-from datetime import datetime
 from sqlalchemy import text
-import os, json, xml.etree.ElementTree as ET
+from datetime import datetime
+import os
+import xml.etree.ElementTree as ET
 from io import BytesIO
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Table
 from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
 
 app = Flask(__name__)
 
@@ -25,9 +25,12 @@ db = SQLAlchemy(app)
 
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-# ================= MODELS =================
+# ================= MODEL =================
 
 class Case(db.Model):
+
+    __tablename__ = "cases"
+
     id = db.Column(db.String, primary_key=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
@@ -47,18 +50,30 @@ class Case(db.Model):
             "caseNumber": self.id,
             "currentStep": self.current_step,
             "status": self.status,
-            "triage": self.triage,
-            "dataEntry": self.data_entry,
-            "medical": self.medical,
-            "quality": self.quality,
+            "triage": self.triage or {},
+            "dataEntry": self.data_entry or {},
+            "medical": self.medical or {},
+            "quality": self.quality or {},
             "narrative": self.narrative
         }
 
 # ================= INIT =================
 
-@app.before_request
-def init():
-    db.create_all()
+def init_db():
+    with app.app_context():
+        db.create_all()
+
+init_db()
+
+# ================= HEALTH =================
+
+@app.route("/api/health")
+def health():
+    try:
+        db.session.execute(text("SELECT 1"))
+        return jsonify({"status": "ok", "database": "connected"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # ================= MEDDRA MOCK =================
 
@@ -71,11 +86,15 @@ MEDDRA = [
 @app.route("/api/meddra")
 def meddra():
     q = request.args.get("q", "").lower()
-    return jsonify([m for m in MEDDRA if q in m["pt"].lower()][:20])
+    results = [m for m in MEDDRA if q in m["pt"].lower()]
+    return jsonify(results[:20])
 
 # ================= CAUSALITY =================
 
 def who_umc(data):
+
+    if not data:
+        return "Unassessable"
 
     time_rel = data.get("timeRelation")
     dechallenge = data.get("dechallenge")
@@ -96,97 +115,111 @@ def who_umc(data):
 
 @app.route("/api/causality", methods=["POST"])
 def causality():
-    result = who_umc(request.json)
+    data = request.json or {}
+    result = who_umc(data)
     return jsonify({"result": result})
 
 # ================= NARRATIVE =================
 
 def generate_narrative(case):
 
-    triage = case.triage or {}
-    de = case.data_entry or {}
-
-    patient = de.get("patient", {})
-    products = de.get("products", [])
-    events = de.get("events", [])
-
-    prod_names = ", ".join([p.get("name","") for p in products])
-    event_terms = ", ".join([e.get("term","") for e in events])
-
-    return f"""
-A {patient.get('age','')} year old {patient.get('gender','')} patient
-experienced {event_terms} following administration of {prod_names}.
-Reported by {triage.get('reporterName','')}.
-""".strip()
-
-# ================= HEALTH =================
-
-@app.route("/api/health")
-def health():
     try:
-        db.session.execute(text("SELECT 1"))
-        return jsonify({"status": "ok", "database": "connected"})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)})
+        triage = case.triage or {}
+        de = case.data_entry or {}
+
+        patient = de.get("patient", {})
+        products = de.get("products", [])
+        events = de.get("events", [])
+
+        prod_names = ", ".join([p.get("name", "") for p in products])
+        event_terms = ", ".join([e.get("term", "") for e in events])
+
+        return (
+            f"A {patient.get('age','')} year old "
+            f"{patient.get('gender','')} patient experienced "
+            f"{event_terms} after receiving {prod_names}. "
+            f"Reported by {triage.get('reporterName','')}."
+        )
+
+    except Exception:
+        return "Narrative unavailable."
 
 # ================= CASE ROUTES =================
 
 @app.route("/api/cases", methods=["GET"])
 def get_cases():
-    return jsonify([c.to_dict() for c in Case.query.all()])
+
+    try:
+        cases = Case.query.all()
+        return jsonify([c.to_dict() for c in cases])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/cases", methods=["POST"])
 def create_case():
 
-    data = request.json
+    try:
 
-    case = Case(
-        id="PV-" + str(int(datetime.utcnow().timestamp())),
-        current_step=2,
-        status="Triage Complete",
-        triage=data
-    )
+        data = request.json or {}
 
-    db.session.add(case)
-    db.session.commit()
+        case = Case(
+            id="PV-" + str(int(datetime.utcnow().timestamp())),
+            current_step=2,
+            status="Triage Complete",
+            triage=data
+        )
 
-    return jsonify(case.to_dict())
+        db.session.add(case)
+        db.session.commit()
+
+        return jsonify(case.to_dict())
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/cases/<case_id>", methods=["PUT"])
 def update_case(case_id):
 
-    case = Case.query.get_or_404(case_id)
-    data = request.json
+    try:
 
-    step = case.current_step
+        case = Case.query.get_or_404(case_id)
+        data = request.json or {}
 
-    if step == 2:
-        case.data_entry = data
-        case.current_step = 3
-        case.status = "Data Entry Complete"
+        step = case.current_step
 
-    elif step == 3:
-        case.medical = data
-        case.narrative = generate_narrative(case)
-        case.current_step = 4
-        case.status = "Medical Review Complete"
-
-    elif step == 4:
-        case.quality = data
-
-        if data.get("finalStatus") == "approved":
-            case.current_step = 5
-            case.status = "Approved"
-        else:
+        if step == 2:
+            case.data_entry = data
             case.current_step = 3
-            case.status = "Returned to Medical"
+            case.status = "Data Entry Complete"
 
-    db.session.commit()
-    return jsonify(case.to_dict())
+        elif step == 3:
+            case.medical = data
+            case.narrative = generate_narrative(case)
+            case.current_step = 4
+            case.status = "Medical Review Complete"
 
-# ================= CIOMS PDF =================
+        elif step == 4:
+            case.quality = data
+
+            if data.get("finalStatus") == "approved":
+                case.current_step = 5
+                case.status = "Approved"
+            else:
+                case.current_step = 3
+                case.status = "Returned to Medical"
+
+        db.session.commit()
+
+        return jsonify(case.to_dict())
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+# ================= CIOMS =================
 
 @app.route("/api/cioms/<case_id>")
 def cioms(case_id):
@@ -194,24 +227,15 @@ def cioms(case_id):
     case = Case.query.get_or_404(case_id)
 
     buffer = BytesIO()
-
     doc = SimpleDocTemplate(buffer, pagesize=A4)
 
     data = [
-        ["CIOMS I FORM", case.id],
-        ["Patient", str(case.data_entry.get("patient", ""))],
-        ["Products", str(case.data_entry.get("products", ""))],
-        ["Events", str(case.data_entry.get("events", ""))],
+        ["CIOMS Report", case.id],
+        ["Status", case.status],
         ["Narrative", case.narrative or ""]
     ]
 
-    table = Table(data, colWidths=[150, 350])
-
-    table.setStyle(TableStyle([
-        ("GRID", (0,0), (-1,-1), 1, colors.black),
-        ("BACKGROUND", (0,0), (-1,0), colors.grey)
-    ]))
-
+    table = Table(data)
     doc.build([table])
 
     buffer.seek(0)
@@ -219,11 +243,11 @@ def cioms(case_id):
     return send_file(
         buffer,
         as_attachment=True,
-        download_name=f"{case.id}_CIOMS.pdf",
+        download_name=f"{case.id}.pdf",
         mimetype="application/pdf"
     )
 
-# ================= E2B XML =================
+# ================= E2B =================
 
 @app.route("/api/e2b/<case_id>")
 def e2b(case_id):
