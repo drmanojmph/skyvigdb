@@ -3,36 +3,24 @@ import axios from 'axios';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
-// Training accounts with roles
-const TRAINING_ACCOUNTS = [
-  { username: 'triage1', password: 'train123', role: 'Triage', color: 'blue', step: 1 },
-  { username: 'dataentry1', password: 'train123', role: 'Data Entry', color: 'green', step: 2 },
-  { username: 'medical1', password: 'train123', role: 'Medical Review', color: 'purple', step: 3 },
-  { username: 'quality1', password: 'train123', role: 'Quality Review', color: 'orange', step: 4 },
-];
-
 function App() {
   const [user, setUser] = useState(null);
   const [cases, setCases] = useState([]);
-  const [view, setView] = useState('queue'); // 'queue', 'process', 'new'
-  const [selectedCase, setSelectedCase] = useState(null);
+  const [view, setView] = useState('list');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('general');
-  const [triageData, setTriageData] = useState({
-    reporterName: '',
-    reporterContact: '',
-    productName: '',
-    eventDescription: ''
-  });
 
-  // Full form state for Data Entry step
+  // Argus-aligned form state
   const [formData, setFormData] = useState({
+    // General Information
     caseNumber: '',
     receiptDate: '',
     seriousness: 'non-serious',
     caseType: 'spontaneous',
+    
+    // Patient Information
     patientInitials: '',
     patientAge: '',
     ageUnit: 'years',
@@ -42,8 +30,12 @@ function App() {
     weightUnit: 'kg',
     height: '',
     heightUnit: 'cm',
+    
+    // Medical History
     medicalHistory: '',
     concurrentConditions: '',
+    
+    // Product Information (Suspect Drug)
     productName: '',
     genericName: '',
     manufacturer: '',
@@ -57,89 +49,64 @@ function App() {
     therapyStopDate: '',
     indication: '',
     actionTaken: 'not-applicable',
+    
+    // Adverse Event/Reaction
     eventDescription: '',
     onsetDate: '',
     stopDate: '',
     outcome: '',
     seriousnessCriteria: [],
+    
+    // Reporter Information
     reporterType: '',
     reporterName: '',
     reporterAddress: '',
     reporterPhone: '',
     reporterEmail: '',
     reporterCountry: '',
+    
+    // Study Information (if applicable)
     studyNumber: '',
     studyType: '',
     centerId: '',
+    
+    // Narrative
     caseNarrative: '',
     companyRemarks: ''
-  });
-
-  // Medical Review state
-  const [medicalReview, setMedicalReview] = useState({
-    causalityAssessment: '',
-    listedness: '',
-    severityAssessment: '',
-    medicalComments: '',
-    recommendedAction: ''
-  });
-
-  // Quality Review state
-  const [qualityReview, setQualityReview] = useState({
-    dataQualityScore: '',
-    completenessCheck: false,
-    consistencyCheck: false,
-    regulatoryCompliance: false,
-    qualityComments: '',
-    finalStatus: ''
   });
 
   useEffect(() => {
     const savedUser = localStorage.getItem('skyvigdb_user');
     if (savedUser) {
-      const parsedUser = JSON.parse(savedUser);
-      setUser(parsedUser);
+      setUser(JSON.parse(savedUser));
       fetchCases();
     }
   }, []);
 
   const login = async (e) => {
     e.preventDefault();
-    
-    // Check against training accounts
-    const account = TRAINING_ACCOUNTS.find(
-      acc => acc.username === username && acc.password === password
-    );
-    
-    if (account) {
-      const userData = {
-        username: account.username,
-        role: account.role,
-        step: account.step,
-        color: account.color
-      };
+    try {
+      const response = await axios.post(`${API_URL}/auth/login`, {
+        username,
+        password
+      });
+      const userData = response.data.user;
       setUser(userData);
       localStorage.setItem('skyvigdb_user', JSON.stringify(userData));
       setError('');
       fetchCases();
-    } else {
-      setError('Invalid training credentials');
+    } catch (err) {
+      setError('Invalid username or password');
     }
-  };
-
-  const quickLogin = (account) => {
-    setUsername(account.username);
-    setPassword(account.password);
   };
 
   const logout = () => {
     setUser(null);
     setCases([]);
-    setView('queue');
-    setSelectedCase(null);
     localStorage.removeItem('skyvigdb_user');
     setUsername('');
     setPassword('');
+    setView('list');
   };
 
   const fetchCases = async () => {
@@ -163,128 +130,14 @@ function App() {
     }
   };
 
-  const handleTriageChange = (e) => {
-    const { name, value } = e.target;
-    setTriageData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleMedicalReviewChange = (e) => {
-    const { name, value } = e.target;
-    setMedicalReview(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleQualityReviewChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setQualityReview(prev => ({ 
-      ...prev, 
-      [name]: type === 'checkbox' ? checked : value 
-    }));
-  };
-
-  // Submit functions for each step
-  const submitTriage = async (e) => {
+  const submitCase = async (e) => {
     e.preventDefault();
     try {
-      const newCase = {
-        ...triageData,
-        status: 'Triage Complete',
-        currentStep: 2,
-        caseNumber: `PV-${Date.now()}`,
-        receiptDate: new Date().toISOString()
-      };
-      await axios.post(`${API_URL}/cases`, newCase);
-      setTriageData({
-        reporterName: '',
-        reporterContact: '',
-        productName: '',
-        eventDescription: ''
-      });
+      await axios.post(`${API_URL}/cases`, formData);
+      setView('list');
       fetchCases();
-      alert('Case created and sent to Data Entry!');
     } catch (err) {
       console.error('Failed to create case');
-    }
-  };
-
-  const submitDataEntry = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.put(`${API_URL}/cases/${selectedCase.id}`, {
-        ...formData,
-        status: 'Data Entry Complete',
-        currentStep: 3
-      });
-      setView('queue');
-      setSelectedCase(null);
-      fetchCases();
-      alert('Case completed and sent to Medical Review!');
-    } catch (err) {
-      console.error('Failed to update case');
-    }
-  };
-
-  const submitMedicalReview = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.put(`${API_URL}/cases/${selectedCase.id}`, {
-        ...medicalReview,
-        status: 'Medical Review Complete',
-        currentStep: 4
-      });
-      setView('queue');
-      setSelectedCase(null);
-      fetchCases();
-      alert('Case reviewed and sent to Quality Review!');
-    } catch (err) {
-      console.error('Failed to submit medical review');
-    }
-  };
-
-  const submitQualityReview = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.put(`${API_URL}/cases/${selectedCase.id}`, {
-        ...qualityReview,
-        status: qualityReview.finalStatus === 'approved' ? 'Approved' : 'Rejected',
-        currentStep: qualityReview.finalStatus === 'approved' ? 5 : 3
-      });
-      setView('queue');
-      setSelectedCase(null);
-      fetchCases();
-      alert(`Case ${qualityReview.finalStatus === 'approved' ? 'approved' : 'rejected'}!`);
-    } catch (err) {
-      console.error('Failed to submit quality review');
-    }
-  };
-
-  const startProcessing = (caseItem) => {
-    setSelectedCase(caseItem);
-    if (user.role === 'Data Entry') {
-      // Pre-fill form with triage data
-      setFormData(prev => ({
-        ...prev,
-        productName: caseItem.productName || '',
-        eventDescription: caseItem.eventDescription || '',
-        reporterName: caseItem.reporterName || '',
-        receiptDate: caseItem.receiptDate || ''
-      }));
-    }
-    setView('process');
-  };
-
-  // Filter cases based on role
-  const getCasesForRole = () => {
-    switch(user?.role) {
-      case 'Triage':
-        return cases.filter(c => !c.currentStep || c.currentStep === 1);
-      case 'Data Entry':
-        return cases.filter(c => c.currentStep === 2 || c.status === 'Triage Complete');
-      case 'Medical Review':
-        return cases.filter(c => c.currentStep === 3 || c.status === 'Data Entry Complete');
-      case 'Quality Review':
-        return cases.filter(c => c.currentStep === 4 || c.status === 'Medical Review Complete');
-      default:
-        return [];
     }
   };
 
@@ -304,30 +157,8 @@ function App() {
     borderRadius: '20px',
     boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
     width: '100%',
-    maxWidth: '500px',
+    maxWidth: '400px',
   };
-
-  const accountGridStyle = {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '10px',
-    marginBottom: '20px'
-  };
-
-  const accountBtnStyle = (color) => ({
-    padding: '15px',
-    border: 'none',
-    borderRadius: '10px',
-    cursor: 'pointer',
-    background: color === 'blue' ? '#007bff' : 
-                color === 'green' ? '#28a745' : 
-                color === 'purple' ? '#6f42c1' : '#fd7e14',
-    color: 'white',
-    fontWeight: 'bold',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center'
-  });
 
   const dashboardStyle = {
     maxWidth: '1400px',
@@ -358,17 +189,6 @@ function App() {
     fontWeight: 'bold',
     marginRight: '10px'
   };
-
-  const stepBadgeStyle = (color) => ({
-    padding: '5px 15px',
-    borderRadius: '20px',
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: '14px',
-    background: color === 'blue' ? '#007bff' : 
-                color === 'green' ? '#28a745' : 
-                color === 'purple' ? '#6f42c1' : '#fd7e14'
-  });
 
   const tabContainerStyle = {
     display: 'flex',
@@ -434,52 +254,27 @@ function App() {
   const grid3Col = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' };
   const grid4Col = { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '15px' };
 
-  const queueCardStyle = {
-    background: 'white',
-    padding: '20px',
-    borderRadius: '10px',
-    marginBottom: '15px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  const checkboxGroupStyle = {
     display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
+    flexWrap: 'wrap',
+    gap: '15px',
+    marginTop: '10px'
   };
 
-  // LOGIN SCREEN
   if (!user) {
     return (
       <div style={loginContainerStyle}>
         <div style={{ textAlign: 'center', marginBottom: '30px' }}>
           <h1 style={{ fontSize: '3rem', color: '#ffffff', margin: '0 0 10px 0' }}>SkyVigilance</h1>
-          <p style={{ color: '#a8c0ff', margin: 0 }}>PV Case Processing Training</p>
+          <p style={{ color: '#a8c0ff', margin: 0 }}>Safety Database Management System</p>
           <p style={{ color: '#ffffff', opacity: 0.8, fontSize: '0.9rem', fontStyle: 'italic' }}>
-            4-Step Workflow: Triage → Data Entry → Medical Review → Quality Review
+            A VigiServe Foundation Initiative
           </p>
         </div>
 
         <div style={cardStyle}>
-          <h2 style={{ textAlign: 'center', color: '#333', marginBottom: '20px' }}>
-            Training Login
-          </h2>
-          
-          <div style={{ marginBottom: '20px' }}>
-            <h4 style={{ marginBottom: '10px', color: '#666' }}>Quick Login (Training Accounts)</h4>
-            <div style={accountGridStyle}>
-              {TRAINING_ACCOUNTS.map(acc => (
-                <button
-                  key={acc.username}
-                  style={accountBtnStyle(acc.color)}
-                  onClick={() => quickLogin(acc)}
-                >
-                  <span>Step {acc.step}</span>
-                  <span style={{ fontSize: '12px', marginTop: '5px' }}>{acc.role}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
+          <h2 style={{ textAlign: 'center', color: '#333', marginBottom: '30px' }}>Welcome Back</h2>
           {error && <div style={{ color: '#e74c3c', textAlign: 'center', marginBottom: '20px' }}>{error}</div>}
-          
           <form onSubmit={login}>
             <input
               type="text"
@@ -504,783 +299,495 @@ function App() {
     );
   }
 
-  // TRIAGE STEP (Step 1)
-  if (user.role === 'Triage') {
-    if (view === 'new') {
-      return (
-        <div style={dashboardStyle}>
-          <div style={headerStyle}>
+  // NEW CASE FORM VIEW
+  if (view === 'new') {
+    const renderGeneralTab = () => (
+      <div>
+        <div style={sectionStyle}>
+          <h3 style={sectionTitleStyle}>📋 General Information</h3>
+          <div style={grid3Col}>
             <div>
-              <h1 style={{ color: '#1e3c72', margin: 0 }}>SkyVigilance</h1>
-              <p style={{ color: '#666', margin: '5px 0 0 0', fontSize: '14px' }}>
-                Step 1: Triage | Create Initial Case Record
-              </p>
+              <label style={labelStyle}>Receipt Date *</label>
+              <input
+                type="datetime-local"
+                name="receiptDate"
+                value={formData.receiptDate}
+                onChange={handleInputChange}
+                style={inputStyle}
+                required
+              />
             </div>
             <div>
-              <span style={{ marginRight: '20px', color: '#666' }}>
-                Welcome, <strong>{user.username}</strong>
-              </span>
-              <span style={stepBadgeStyle(user.color)}>{user.role}</span>
-              <button onClick={logout} style={{ ...buttonStyle, background: '#dc3545', marginLeft: '10px' }}>
-                Logout
-              </button>
+              <label style={labelStyle}>Seriousness *</label>
+              <select name="seriousness" value={formData.seriousness} onChange={handleInputChange} style={inputStyle}>
+                <option value="non-serious">Non-Serious</option>
+                <option value="serious">Serious</option>
+              </select>
             </div>
-          </div>
-
-          <div style={{ background: 'white', padding: '30px', borderRadius: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-            <h2 style={{ color: '#333', marginBottom: '20px' }}>New Case Triage (4 Minimum Criteria)</h2>
-            
-            <form onSubmit={submitTriage}>
-              <div style={sectionStyle}>
-                <h3 style={sectionTitleStyle}>1. Reporter Information</h3>
-                <div style={grid2Col}>
-                  <div>
-                    <label style={labelStyle}>Reporter Name *</label>
-                    <input
-                      type="text"
-                      name="reporterName"
-                      value={triageData.reporterName}
-                      onChange={handleTriageChange}
-                      style={inputStyle}
-                      required
-                      placeholder="Name of person reporting"
-                    />
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Contact Information *</label>
-                    <input
-                      type="text"
-                      name="reporterContact"
-                      value={triageData.reporterContact}
-                      onChange={handleTriageChange}
-                      style={inputStyle}
-                      required
-                      placeholder="Phone or email"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div style={sectionStyle}>
-                <h3 style={sectionTitleStyle}>2. Product Information</h3>
-                <div>
-                  <label style={labelStyle}>Suspect Product Name *</label>
-                  <input
-                    type="text"
-                    name="productName"
-                    value={triageData.productName}
-                    onChange={handleTriageChange}
-                    style={inputStyle}
-                    required
-                    placeholder="Drug or product name"
-                  />
-                </div>
-              </div>
-
-              <div style={sectionStyle}>
-                <h3 style={sectionTitleStyle}>3. Adverse Event Description</h3>
-                <div>
-                  <label style={labelStyle}>Event Description *</label>
-                  <textarea
-                    name="eventDescription"
-                    value={triageData.eventDescription}
-                    onChange={handleTriageChange}
-                    style={{ ...inputStyle, height: '100px' }}
-                    required
-                    placeholder="Brief description of what happened"
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '15px', marginTop: '30px' }}>
-                <button type="submit" style={{ ...buttonStyle, flex: 1, padding: '15px', fontSize: '16px', background: '#007bff' }}>
-                  Create Case & Send to Data Entry →
-                </button>
-                <button type="button" onClick={() => setView('queue')} style={{ 
-                  ...buttonStyle, 
-                  flex: 1, 
-                  background: '#6c757d',
-                  padding: '15px',
-                  fontSize: '16px'
-                }}>
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      );
-    }
-
-    // Triage Queue View
-    return (
-      <div style={dashboardStyle}>
-        <div style={headerStyle}>
-          <div>
-            <h1 style={{ color: '#1e3c72', margin: 0 }}>SkyVigilance</h1>
-            <p style={{ color: '#666', margin: '5px 0 0 0', fontSize: '14px' }}>
-              Step 1: Triage | Initial Case Assessment
-            </p>
-          </div>
-          <div>
-            <span style={{ marginRight: '20px', color: '#666' }}>
-              Welcome, <strong>{user.username}</strong>
-            </span>
-            <span style={stepBadgeStyle(user.color)}>{user.role}</span>
-            <button onClick={logout} style={{ ...buttonStyle, background: '#dc3545', marginLeft: '10px' }}>
-              Logout
-            </button>
+            <div>
+              <label style={labelStyle}>Case Type *</label>
+              <select name="caseType" value={formData.caseType} onChange={handleInputChange} style={inputStyle}>
+                <option value="spontaneous">Spontaneous</option>
+                <option value="report-from-study">Report from Study</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <div style={{ background: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h2 style={{ color: '#333', margin: 0 }}>New Reports Queue</h2>
-            <button onClick={() => setView('new')} style={{ ...buttonStyle, background: '#007bff' }}>
-              + New Case Triage
-            </button>
-          </div>
-          
-          {getCasesForRole().length === 0 ? (
-            <p style={{ color: '#666', textAlign: 'center', padding: '40px' }}>
-              No new reports pending triage. Click "New Case Triage" to create a case.
-            </p>
-          ) : (
-            getCasesForRole().map(c => (
-              <div key={c.id} style={queueCardStyle}>
-                <div>
-                  <strong>Case: {c.caseNumber || 'Pending'}</strong>
-                  <p style={{ margin: '5px 0', color: '#666' }}>Product: {c.productName}</p>
-                  <p style={{ margin: 0, color: '#999', fontSize: '12px' }}>
-                    Received: {c.receiptDate ? new Date(c.receiptDate).toLocaleString() : 'N/A'}
-                  </p>
-                </div>
-                <span style={{ 
-                  padding: '5px 10px', 
-                  borderRadius: '5px', 
-                  background: '#ffc107', 
-                  color: '#000',
-                  fontSize: '12px'
-                }}>
-                  {c.status || 'New'}
-                </span>
+        <div style={sectionStyle}>
+          <h3 style={sectionTitleStyle}>👤 Patient Information</h3>
+          <div style={grid4Col}>
+            <div>
+              <label style={labelStyle}>Patient Initials *</label>
+              <input type="text" name="patientInitials" value={formData.patientInitials} onChange={handleInputChange} style={inputStyle} required />
+            </div>
+            <div>
+              <label style={labelStyle}>Date of Birth</label>
+              <input type="date" name="dateOfBirth" value={formData.dateOfBirth} onChange={handleInputChange} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Age</label>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                <input type="number" name="patientAge" value={formData.patientAge} onChange={handleInputChange} style={{ ...inputStyle, flex: 2 }} />
+                <select name="ageUnit" value={formData.ageUnit} onChange={handleInputChange} style={{ ...inputStyle, flex: 1 }}>
+                  <option value="years">Years</option>
+                  <option value="months">Months</option>
+                  <option value="days">Days</option>
+                </select>
               </div>
-            ))
-          )}
+            </div>
+            <div>
+              <label style={labelStyle}>Gender *</label>
+              <select name="gender" value={formData.gender} onChange={handleInputChange} style={inputStyle} required>
+                <option value="">Select</option>
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ ...grid2Col, marginTop: '15px' }}>
+            <div>
+              <label style={labelStyle}>Weight</label>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                <input type="number" name="weight" value={formData.weight} onChange={handleInputChange} style={{ ...inputStyle, flex: 2 }} />
+                <select name="weightUnit" value={formData.weightUnit} onChange={handleInputChange} style={{ ...inputStyle, flex: 1 }}>
+                  <option value="kg">kg</option>
+                  <option value="lbs">lbs</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label style={labelStyle}>Height</label>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                <input type="number" name="height" value={formData.height} onChange={handleInputChange} style={{ ...inputStyle, flex: 2 }} />
+                <select name="heightUnit" value={formData.heightUnit} onChange={handleInputChange} style={{ ...inputStyle, flex: 1 }}>
+                  <option value="cm">cm</option>
+                  <option value="inches">inches</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={sectionStyle}>
+          <h3 style={sectionTitleStyle}>🏥 Medical History</h3>
+          <div>
+            <label style={labelStyle}>Relevant Medical History</label>
+            <textarea name="medicalHistory" value={formData.medicalHistory} onChange={handleInputChange} style={{ ...inputStyle, height: '80px' }} placeholder="Include all relevant medical history..." />
+          </div>
+          <div style={{ marginTop: '15px' }}>
+            <label style={labelStyle}>Concurrent Conditions</label>
+            <textarea name="concurrentConditions" value={formData.concurrentConditions} onChange={handleInputChange} style={{ ...inputStyle, height: '60px' }} placeholder="Any concurrent medical conditions..." />
+          </div>
         </div>
       </div>
     );
-  }
 
-  // DATA ENTRY STEP (Step 2) - Full Argus-aligned form
-  if (user.role === 'Data Entry') {
-    if (view === 'process' && selectedCase) {
-      // Render full data entry form (your existing form code)
-      const renderGeneralTab = () => (
-        <div>
+    const renderProductTab = () => (
+      <div>
+        <div style={sectionStyle}>
+          <h3 style={sectionTitleStyle}>💊 Suspect Product Information</h3>
+          <div style={grid2Col}>
+            <div>
+              <label style={labelStyle}>Product/Brand Name *</label>
+              <input type="text" name="productName" value={formData.productName} onChange={handleInputChange} style={inputStyle} required />
+            </div>
+            <div>
+              <label style={labelStyle}>Generic Name</label>
+              <input type="text" name="genericName" value={formData.genericName} onChange={handleInputChange} style={inputStyle} />
+            </div>
+          </div>
+          <div style={{ ...grid3Col, marginTop: '15px' }}>
+            <div>
+              <label style={labelStyle}>Manufacturer</label>
+              <input type="text" name="manufacturer" value={formData.manufacturer} onChange={handleInputChange} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Lot/Batch Number</label>
+              <input type="text" name="lotNumber" value={formData.lotNumber} onChange={handleInputChange} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Expiry Date</label>
+              <input type="date" name="expiryDate" value={formData.expiryDate} onChange={handleInputChange} style={inputStyle} />
+            </div>
+          </div>
+        </div>
+
+        <div style={sectionStyle}>
+          <h3 style={sectionTitleStyle}>📅 Therapy Details</h3>
+          <div style={grid4Col}>
+            <div>
+              <label style={labelStyle}>Dose *</label>
+              <div style={{ display: 'flex', gap: '5px' }}>
+                <input type="text" name="dose" value={formData.dose} onChange={handleInputChange} style={{ ...inputStyle, flex: 2 }} required />
+                <select name="doseUnit" value={formData.doseUnit} onChange={handleInputChange} style={{ ...inputStyle, flex: 1 }}>
+                  <option value="mg">mg</option>
+                  <option value="g">g</option>
+                  <option value="ml">ml</option>
+                  <option value="units">units</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label style={labelStyle}>Frequency</label>
+              <input type="text" name="frequency" value={formData.frequency} onChange={handleInputChange} style={inputStyle} placeholder="e.g., BID, TID, QD" />
+            </div>
+            <div>
+              <label style={labelStyle}>Route *</label>
+              <select name="route" value={formData.route} onChange={handleInputChange} style={inputStyle} required>
+                <option value="">Select</option>
+                <option value="oral">Oral</option>
+                <option value="iv">Intravenous</option>
+                <option value="im">Intramuscular</option>
+                <option value="sc">Subcutaneous</option>
+                <option value="topical">Topical</option>
+                <option value="inhalation">Inhalation</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Indication</label>
+              <input type="text" name="indication" value={formData.indication} onChange={handleInputChange} style={inputStyle} placeholder="Reason for use" />
+            </div>
+          </div>
+          <div style={{ ...grid2Col, marginTop: '15px' }}>
+            <div>
+              <label style={labelStyle}>Therapy Start Date</label>
+              <input type="date" name="therapyStartDate" value={formData.therapyStartDate} onChange={handleInputChange} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Therapy Stop Date</label>
+              <input type="date" name="therapyStopDate" value={formData.therapyStopDate} onChange={handleInputChange} style={inputStyle} />
+            </div>
+          </div>
+          <div style={{ marginTop: '15px' }}>
+            <label style={labelStyle}>Action Taken with Product</label>
+            <select name="actionTaken" value={formData.actionTaken} onChange={handleInputChange} style={inputStyle}>
+              <option value="not-applicable">Not Applicable</option>
+              <option value="dose-reduced">Dose Reduced</option>
+              <option value="dose-increased">Dose Increased</option>
+              <option value="drug-withdrawn">Drug Withdrawn</option>
+              <option value="not-changed">Dose Not Changed</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    );
+
+    const renderEventTab = () => (
+      <div>
+        <div style={sectionStyle}>
+          <h3 style={sectionTitleStyle}>⚠️ Adverse Event/Reaction</h3>
+          <div>
+            <label style={labelStyle}>Event Description *</label>
+            <textarea name="eventDescription" value={formData.eventDescription} onChange={handleInputChange} style={{ ...inputStyle, height: '100px' }} placeholder="Detailed description of the adverse event..." required />
+          </div>
+          <div style={{ ...grid2Col, marginTop: '15px' }}>
+            <div>
+              <label style={labelStyle}>Onset Date *</label>
+              <input type="date" name="onsetDate" value={formData.onsetDate} onChange={handleInputChange} style={inputStyle} required />
+            </div>
+            <div>
+              <label style={labelStyle}>Stop Date</label>
+              <input type="date" name="stopDate" value={formData.stopDate} onChange={handleInputChange} style={inputStyle} />
+            </div>
+          </div>
+          <div style={{ marginTop: '15px' }}>
+            <label style={labelStyle}>Outcome</label>
+            <select name="outcome" value={formData.outcome} onChange={handleInputChange} style={inputStyle}>
+              <option value="">Select</option>
+              <option value="recovered">Recovered/Resolved</option>
+              <option value="recovering">Recovering/Resolving</option>
+              <option value="not-recovered">Not Recovered/Not Resolved</option>
+              <option value="recovered-sequelae">Recovered with Sequelae</option>
+              <option value="fatal">Fatal</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          </div>
+        </div>
+
+        {formData.seriousness === 'serious' && (
+          <div style={{ ...sectionStyle, borderLeftColor: '#dc3545' }}>
+            <h3 style={{ ...sectionTitleStyle, color: '#dc3545' }}>🚨 Seriousness Criteria</h3>
+            <p style={{ marginBottom: '10px', color: '#666' }}>Select all that apply:</p>
+            <div style={checkboxGroupStyle}>
+              {[
+                { value: 'death', label: 'Results in Death' },
+                { value: 'life-threatening', label: 'Life Threatening' },
+                { value: 'hospitalization', label: 'Hospitalization or Prolongation' },
+                { value: 'disability', label: 'Persistent Disability/Incapacity' },
+                { value: 'congenital', label: 'Congenital Anomaly/Birth Defect' },
+                { value: 'intervention', label: 'Medically Important Event' }
+              ].map(criteria => (
+                <label key={criteria.value} style={{ 
+                  padding: '10px 15px', 
+                  background: formData.seriousnessCriteria.includes(criteria.value) ? '#dc3545' : '#f8f9fa',
+                  color: formData.seriousnessCriteria.includes(criteria.value) ? 'white' : '#333',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  border: '1px solid #ddd'
+                }}>
+                  <input
+                    type="checkbox"
+                    name="seriousnessCriteria"
+                    value={criteria.value}
+                    checked={formData.seriousnessCriteria.includes(criteria.value)}
+                    onChange={handleInputChange}
+                    style={{ marginRight: '8px' }}
+                  />
+                  {criteria.label}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+
+    const renderReporterTab = () => (
+      <div>
+        <div style={sectionStyle}>
+          <h3 style={sectionTitleStyle}>📞 Reporter Information</h3>
+          <div style={grid2Col}>
+            <div>
+              <label style={labelStyle}>Reporter Type *</label>
+              <select name="reporterType" value={formData.reporterType} onChange={handleInputChange} style={inputStyle} required>
+                <option value="">Select</option>
+                <option value="physician">Physician</option>
+                <option value="pharmacist">Pharmacist</option>
+                <option value="nurse">Nurse/Other Health Professional</option>
+                <option value="consumer">Consumer/Patient</option>
+                <option value="lawyer">Lawyer</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Reporter Name</label>
+              <input type="text" name="reporterName" value={formData.reporterName} onChange={handleInputChange} style={inputStyle} />
+            </div>
+          </div>
+          <div style={{ marginTop: '15px' }}>
+            <label style={labelStyle}>Address</label>
+            <textarea name="reporterAddress" value={formData.reporterAddress} onChange={handleInputChange} style={{ ...inputStyle, height: '60px' }} />
+          </div>
+          <div style={{ ...grid3Col, marginTop: '15px' }}>
+            <div>
+              <label style={labelStyle}>Phone</label>
+              <input type="tel" name="reporterPhone" value={formData.reporterPhone} onChange={handleInputChange} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Email</label>
+              <input type="email" name="reporterEmail" value={formData.reporterEmail} onChange={handleInputChange} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Country *</label>
+              <input type="text" name="reporterCountry" value={formData.reporterCountry} onChange={handleInputChange} style={inputStyle} required />
+            </div>
+          </div>
+        </div>
+
+        {formData.caseType === 'report-from-study' && (
           <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>📋 General Information</h3>
+            <h3 style={sectionTitleStyle}>🔬 Study Information</h3>
             <div style={grid3Col}>
               <div>
-                <label style={labelStyle}>Receipt Date *</label>
-                <input
-                  type="datetime-local"
-                  name="receiptDate"
-                  value={formData.receiptDate}
-                  onChange={handleInputChange}
-                  style={inputStyle}
-                  required
-                />
+                <label style={labelStyle}>Study Number</label>
+                <input type="text" name="studyNumber" value={formData.studyNumber} onChange={handleInputChange} style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>Seriousness *</label>
-                <select name="seriousness" value={formData.seriousness} onChange={handleInputChange} style={inputStyle}>
-                  <option value="non-serious">Non-Serious</option>
-                  <option value="serious">Serious</option>
-                </select>
-              </div>
-              <div>
-                <label style={labelStyle}>Case Type *</label>
-                <select name="caseType" value={formData.caseType} onChange={handleInputChange} style={inputStyle}>
-                  <option value="spontaneous">Spontaneous</option>
-                  <option value="report-from-study">Report from Study</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>👤 Patient Information</h3>
-            <div style={grid4Col}>
-              <div>
-                <label style={labelStyle}>Patient Initials *</label>
-                <input type="text" name="patientInitials" value={formData.patientInitials} onChange={handleInputChange} style={inputStyle} required />
-              </div>
-              <div>
-                <label style={labelStyle}>Date of Birth</label>
-                <input type="date" name="dateOfBirth" value={formData.dateOfBirth} onChange={handleInputChange} style={inputStyle} />
-              </div>
-              <div>
-                <label style={labelStyle}>Age</label>
-                <div style={{ display: 'flex', gap: '5px' }}>
-                  <input type="number" name="patientAge" value={formData.patientAge} onChange={handleInputChange} style={{ ...inputStyle, flex: 2 }} />
-                  <select name="ageUnit" value={formData.ageUnit} onChange={handleInputChange} style={{ ...inputStyle, flex: 1 }}>
-                    <option value="years">Years</option>
-                    <option value="months">Months</option>
-                    <option value="days">Days</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label style={labelStyle}>Gender *</label>
-                <select name="gender" value={formData.gender} onChange={handleInputChange} style={inputStyle} required>
+                <label style={labelStyle}>Study Type</label>
+                <select name="studyType" value={formData.studyType} onChange={handleInputChange} style={inputStyle}>
                   <option value="">Select</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="unknown">Unknown</option>
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-
-      const renderProductTab = () => (
-        <div>
-          <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>💊 Suspect Product Information</h3>
-            <div style={grid2Col}>
-              <div>
-                <label style={labelStyle}>Product/Brand Name *</label>
-                <input type="text" name="productName" value={formData.productName} onChange={handleInputChange} style={inputStyle} required />
-              </div>
-              <div>
-                <label style={labelStyle}>Generic Name</label>
-                <input type="text" name="genericName" value={formData.genericName} onChange={handleInputChange} style={inputStyle} />
-              </div>
-            </div>
-            <div style={{ ...grid3Col, marginTop: '15px' }}>
-              <div>
-                <label style={labelStyle}>Dose *</label>
-                <div style={{ display: 'flex', gap: '5px' }}>
-                  <input type="text" name="dose" value={formData.dose} onChange={handleInputChange} style={{ ...inputStyle, flex: 2 }} required />
-                  <select name="doseUnit" value={formData.doseUnit} onChange={handleInputChange} style={{ ...inputStyle, flex: 1 }}>
-                    <option value="mg">mg</option>
-                    <option value="g">g</option>
-                    <option value="ml">ml</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label style={labelStyle}>Route *</label>
-                <select name="route" value={formData.route} onChange={handleInputChange} style={inputStyle} required>
-                  <option value="">Select</option>
-                  <option value="oral">Oral</option>
-                  <option value="iv">Intravenous</option>
-                  <option value="im">Intramuscular</option>
-                  <option value="sc">Subcutaneous</option>
+                  <option value="clinical-trial">Clinical Trial</option>
+                  <option value="post-marketing">Post-Marketing Study</option>
                   <option value="other">Other</option>
                 </select>
               </div>
               <div>
-                <label style={labelStyle}>Indication</label>
-                <input type="text" name="indication" value={formData.indication} onChange={handleInputChange} style={inputStyle} placeholder="Reason for use" />
+                <label style={labelStyle}>Center ID</label>
+                <input type="text" name="centerId" value={formData.centerId} onChange={handleInputChange} style={inputStyle} />
               </div>
             </div>
+          </div>
+        )}
+      </div>
+    );
+
+    const renderNarrativeTab = () => (
+      <div>
+        <div style={sectionStyle}>
+          <h3 style={sectionTitleStyle}>📝 Case Narrative</h3>
+          <div>
+            <label style={labelStyle}>Detailed Narrative *</label>
+            <textarea 
+              name="caseNarrative" 
+              value={formData.caseNarrative} 
+              onChange={handleInputChange} 
+              style={{ ...inputStyle, height: '200px' }} 
+              placeholder="Provide a comprehensive narrative of the case including:&#10;&#10;- Description of the adverse event&#10;- Temporal relationship to drug administration&#10;- Relevant medical history&#10;- Concomitant medications&#10;- Diagnostic tests and results&#10;- Treatment provided&#10;- Outcome and follow-up"
+              required 
+            />
           </div>
         </div>
-      );
 
-      const renderEventTab = () => (
-        <div>
-          <div style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>⚠️ Adverse Event/Reaction</h3>
-            <div>
-              <label style={labelStyle}>Event Description *</label>
-              <textarea name="eventDescription" value={formData.eventDescription} onChange={handleInputChange} style={{ ...inputStyle, height: '100px' }} required />
-            </div>
-            <div style={{ ...grid2Col, marginTop: '15px' }}>
-              <div>
-                <label style={labelStyle}>Onset Date *</label>
-                <input type="date" name="onsetDate" value={formData.onsetDate} onChange={handleInputChange} style={inputStyle} required />
-              </div>
-              <div>
-                <label style={labelStyle}>Outcome</label>
-                <select name="outcome" value={formData.outcome} onChange={handleInputChange} style={inputStyle}>
-                  <option value="">Select</option>
-                  <option value="recovered">Recovered</option>
-                  <option value="recovering">Recovering</option>
-                  <option value="not-recovered">Not Recovered</option>
-                  <option value="fatal">Fatal</option>
-                  <option value="unknown">Unknown</option>
-                </select>
-              </div>
-            </div>
+        <div style={sectionStyle}>
+          <h3 style={sectionTitleStyle}>💬 Company Remarks</h3>
+          <div>
+            <label style={labelStyle}>Internal Assessment/Comments</label>
+            <textarea 
+              name="companyRemarks" 
+              value={formData.companyRemarks} 
+              onChange={handleInputChange} 
+              style={{ ...inputStyle, height: '100px' }} 
+              placeholder="Internal assessment, causality evaluation, regulatory comments..."
+            />
           </div>
         </div>
-      );
+      </div>
+    );
 
-      return (
-        <div style={dashboardStyle}>
-          <div style={headerStyle}>
-            <div>
-              <h1 style={{ color: '#1e3c72', margin: 0 }}>SkyVigilance</h1>
-              <p style={{ color: '#666', margin: '5px 0 0 0', fontSize: '14px' }}>
-                Step 2: Data Entry | Complete Case Information
-              </p>
-            </div>
-            <div>
-              <span style={{ marginRight: '20px', color: '#666' }}>
-                Case: <strong>{selectedCase.caseNumber}</strong>
-              </span>
-              <span style={stepBadgeStyle(user.color)}>{user.role}</span>
-              <button onClick={() => {setView('queue'); setSelectedCase(null);}} style={{ ...buttonStyle, background: '#6c757d', marginLeft: '10px' }}>
-                ← Back to Queue
-              </button>
-            </div>
-          </div>
-
-          <div style={tabContainerStyle}>
-            <button style={tabStyle(activeTab === 'general')} onClick={() => setActiveTab('general')}>General</button>
-            <button style={tabStyle(activeTab === 'product')} onClick={() => setActiveTab('product')}>Product</button>
-            <button style={tabStyle(activeTab === 'event')} onClick={() => setActiveTab('event')}>Adverse Event</button>
-            <button style={tabStyle(activeTab === 'reporter')} onClick={() => setActiveTab('reporter')}>Reporter</button>
-            <button style={tabStyle(activeTab === 'narrative')} onClick={() => setActiveTab('narrative')}>Narrative</button>
-          </div>
-
-          <form onSubmit={submitDataEntry} style={formStyle}>
-            {activeTab === 'general' && renderGeneralTab()}
-            {activeTab === 'product' && renderProductTab()}
-            {activeTab === 'event' && renderEventTab()}
-            
-            {activeTab === 'reporter' && (
-              <div style={sectionStyle}>
-                <h3 style={sectionTitleStyle}>📞 Reporter Information</h3>
-                <div style={grid2Col}>
-                  <div>
-                    <label style={labelStyle}>Reporter Type *</label>
-                    <select name="reporterType" value={formData.reporterType} onChange={handleInputChange} style={inputStyle} required>
-                      <option value="">Select</option>
-                      <option value="physician">Physician</option>
-                      <option value="pharmacist">Pharmacist</option>
-                      <option value="consumer">Consumer</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={labelStyle}>Reporter Name</label>
-                    <input type="text" name="reporterName" value={formData.reporterName} onChange={handleInputChange} style={inputStyle} />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'narrative' && (
-              <div style={sectionStyle}>
-                <h3 style={sectionTitleStyle}>📝 Case Narrative</h3>
-                <textarea name="caseNarrative" value={formData.caseNarrative} onChange={handleInputChange} style={{ ...inputStyle, height: '200px' }} placeholder="Comprehensive case narrative..." />
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '15px', marginTop: '30px' }}>
-              <button type="submit" style={{ ...buttonStyle, flex: 1, padding: '15px', fontSize: '16px', background: '#28a745' }}>
-                Complete & Send to Medical Review →
-              </button>
-            </div>
-          </form>
-        </div>
-      );
-    }
-
-    // Data Entry Queue
     return (
       <div style={dashboardStyle}>
         <div style={headerStyle}>
           <div>
             <h1 style={{ color: '#1e3c72', margin: 0 }}>SkyVigilance</h1>
-            <p style={{ color: '#666', margin: '5px 0 0 0', fontSize: '14px' }}>
-              Step 2: Data Entry | Complete Case Details
-            </p>
+            <p style={{ color: '#666', margin: '5px 0 0 0', fontSize: '14px' }}>Argus-Aligned Safety Case Entry</p>
           </div>
           <div>
-            <span style={{ marginRight: '20px', color: '#666' }}>
-              Welcome, <strong>{user.username}</strong>
-            </span>
-            <span style={stepBadgeStyle(user.color)}>{user.role}</span>
-            <button onClick={logout} style={{ ...buttonStyle, background: '#dc3545', marginLeft: '10px' }}>
+            <button onClick={() => setView('list')} style={{ ...buttonStyle, background: '#6c757d' }}>
+              ← Back to List
+            </button>
+            <button onClick={logout} style={{ ...buttonStyle, background: '#dc3545' }}>
               Logout
             </button>
           </div>
         </div>
 
-        <div style={{ background: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <h2 style={{ color: '#333', marginBottom: '20px' }}>Cases Pending Data Entry ({getCasesForRole().length})</h2>
-          
-          {getCasesForRole().length === 0 ? (
-            <p style={{ color: '#666', textAlign: 'center', padding: '40px' }}>
-              No cases pending. Waiting for Triage to create new cases.
-            </p>
-          ) : (
-            getCasesForRole().map(c => (
-              <div key={c.id} style={queueCardStyle}>
-                <div>
-                  <strong>Case: {c.caseNumber}</strong>
-                  <p style={{ margin: '5px 0', color: '#666' }}>Product: {c.productName}</p>
-                  <p style={{ margin: 0, color: '#999', fontSize: '12px' }}>From Triage: {c.reporterName}</p>
-                </div>
-                <button onClick={() => startProcessing(c)} style={{ ...buttonStyle, background: '#28a745' }}>
-                  Start Data Entry
-                </button>
-              </div>
-            ))
-          )}
+        <div style={tabContainerStyle}>
+          <button style={tabStyle(activeTab === 'general')} onClick={() => setActiveTab('general')}>General</button>
+          <button style={tabStyle(activeTab === 'product')} onClick={() => setActiveTab('product')}>Product</button>
+          <button style={tabStyle(activeTab === 'event')} onClick={() => setActiveTab('event')}>Adverse Event</button>
+          <button style={tabStyle(activeTab === 'reporter')} onClick={() => setActiveTab('reporter')}>Reporter</button>
+          <button style={tabStyle(activeTab === 'narrative')} onClick={() => setActiveTab('narrative')}>Narrative</button>
         </div>
-      </div>
-    );
-  }
 
-  // MEDICAL REVIEW STEP (Step 3)
-  if (user.role === 'Medical Review') {
-    if (view === 'process' && selectedCase) {
-      return (
-        <div style={dashboardStyle}>
-          <div style={headerStyle}>
-            <div>
-              <h1 style={{ color: '#1e3c72', margin: 0 }}>SkyVigilance</h1>
-              <p style={{ color: '#666', margin: '5px 0 0 0', fontSize: '14px' }}>
-                Step 3: Medical Review | Clinical Assessment
-              </p>
-            </div>
-            <div>
-              <span style={{ marginRight: '20px', color: '#666' }}>
-                Case: <strong>{selectedCase.caseNumber}</strong>
-              </span>
-              <span style={stepBadgeStyle(user.color)}>{user.role}</span>
-              <button onClick={() => {setView('queue'); setSelectedCase(null);}} style={{ ...buttonStyle, background: '#6c757d', marginLeft: '10px' }}>
-                ← Back to Queue
-              </button>
-            </div>
-          </div>
+        <form onSubmit={submitCase} style={formStyle}>
+          {activeTab === 'general' && renderGeneralTab()}
+          {activeTab === 'product' && renderProductTab()}
+          {activeTab === 'event' && renderEventTab()}
+          {activeTab === 'reporter' && renderReporterTab()}
+          {activeTab === 'narrative' && renderNarrativeTab()}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-            <div style={{ background: 'white', padding: '20px', borderRadius: '10px' }}>
-              <h3 style={{ color: '#333', marginBottom: '15px' }}>Case Summary</h3>
-              <p><strong>Product:</strong> {selectedCase.productName}</p>
-              <p><strong>Event:</strong> {selectedCase.eventDescription}</p>
-              <p><strong>Patient:</strong> {selectedCase.patientInitials || 'N/A'}</p>
-              <p><strong>Reporter:</strong> {selectedCase.reporterName}</p>
-            </div>
-
-            <div style={{ background: 'white', padding: '20px', borderRadius: '10px' }}>
-              <h3 style={{ color: '#333', marginBottom: '15px' }}>Medical Assessment</h3>
-              <form onSubmit={submitMedicalReview}>
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={labelStyle}>Causality Assessment *</label>
-                  <select name="causalityAssessment" value={medicalReview.causalityAssessment} onChange={handleMedicalReviewChange} style={inputStyle} required>
-                    <option value="">Select</option>
-                    <option value="certain">Certain</option>
-                    <option value="probable">Probable/Likely</option>
-                    <option value="possible">Possible</option>
-                    <option value="unlikely">Unlikely</option>
-                    <option value="conditional">Conditional/Unclassified</option>
-                    <option value="unassessable">Unassessable/Unclassifiable</option>
-                  </select>
-                </div>
-
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={labelStyle}>Listedness *</label>
-                  <select name="listedness" value={medicalReview.listedness} onChange={handleMedicalReviewChange} style={inputStyle} required>
-                    <option value="">Select</option>
-                    <option value="listed">Listed (Expected)</option>
-                    <option value="unlisted">Unlisted (Unexpected)</option>
-                  </select>
-                </div>
-
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={labelStyle}>Severity Assessment</label>
-                  <textarea name="severityAssessment" value={medicalReview.severityAssessment} onChange={handleMedicalReviewChange} style={{ ...inputStyle, height: '60px' }} />
-                </div>
-
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={labelStyle}>Medical Comments</label>
-                  <textarea name="medicalComments" value={medicalReview.medicalComments} onChange={handleMedicalReviewChange} style={{ ...inputStyle, height: '100px' }} placeholder="Clinical assessment, differential diagnosis, etc." />
-                </div>
-
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={labelStyle}>Recommended Action</label>
-                  <select name="recommendedAction" value={medicalReview.recommendedAction} onChange={handleMedicalReviewChange} style={inputStyle}>
-                    <option value="">Select</option>
-                    <option value="follow-up">Request Follow-up</option>
-                    <option value="regulatory-report">Regulatory Report</option>
-                    <option value="label-change">Label Change</option>
-                    <option value="none">No Action</option>
-                  </select>
-                </div>
-
-                <button type="submit" style={{ ...buttonStyle, width: '100%', padding: '15px', background: '#6f42c1' }}>
-                  Complete Medical Review & Send to Quality →
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Medical Review Queue
-    return (
-      <div style={dashboardStyle}>
-        <div style={headerStyle}>
-          <div>
-            <h1 style={{ color: '#1e3c72', margin: 0 }}>SkyVigilance</h1>
-            <p style={{ color: '#666', margin: '5px 0 0 0', fontSize: '14px' }}>
-              Step 3: Medical Review | Clinical Assessment
-            </p>
-          </div>
-          <div>
-            <span style={{ marginRight: '20px', color: '#666' }}>
-              Welcome, <strong>{user.username}</strong>
-            </span>
-            <span style={stepBadgeStyle(user.color)}>{user.role}</span>
-            <button onClick={logout} style={{ ...buttonStyle, background: '#dc3545', marginLeft: '10px' }}>
-              Logout
+          <div style={{ display: 'flex', gap: '15px', marginTop: '30px', paddingTop: '20px', borderTop: '2px solid #dee2e6' }}>
+            <button type="submit" style={{ ...buttonStyle, flex: 1, padding: '15px', fontSize: '16px' }}>
+              💾 Submit Case to Safety Database
+            </button>
+            <button type="button" onClick={() => setView('list')} style={{ 
+              ...buttonStyle, 
+              flex: 1, 
+              background: '#6c757d',
+              padding: '15px',
+              fontSize: '16px'
+            }}>
+              Cancel
             </button>
           </div>
-        </div>
-
-        <div style={{ background: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <h2 style={{ color: '#333', marginBottom: '20px' }}>Cases Pending Medical Review ({getCasesForRole().length})</h2>
-          
-          {getCasesForRole().length === 0 ? (
-            <p style={{ color: '#666', textAlign: 'center', padding: '40px' }}>
-              No cases pending medical review.
-            </p>
-          ) : (
-            getCasesForRole().map(c => (
-              <div key={c.id} style={queueCardStyle}>
-                <div>
-                  <strong>Case: {c.caseNumber}</strong>
-                  <p style={{ margin: '5px 0', color: '#666' }}>Product: {c.productName}</p>
-                  <p style={{ margin: 0, color: '#999', fontSize: '12px' }}>Event: {c.eventDescription?.substring(0, 50)}...</p>
-                </div>
-                <button onClick={() => startProcessing(c)} style={{ ...buttonStyle, background: '#6f42c1' }}>
-                  Start Medical Review
-                </button>
-              </div>
-            ))
-          )}
-        </div>
+        </form>
       </div>
     );
   }
 
-  // QUALITY REVIEW STEP (Step 4)
-  if (user.role === 'Quality Review') {
-    if (view === 'process' && selectedCase) {
-      return (
-        <div style={dashboardStyle}>
-          <div style={headerStyle}>
-            <div>
-              <h1 style={{ color: '#1e3c72', margin: 0 }}>SkyVigilance</h1>
-              <p style={{ color: '#666', margin: '5px 0 0 0', fontSize: '14px' }}>
-                Step 4: Quality Review | Final Verification
-              </p>
-            </div>
-            <div>
-              <span style={{ marginRight: '20px', color: '#666' }}>
-                Case: <strong>{selectedCase.caseNumber}</strong>
-              </span>
-              <span style={stepBadgeStyle(user.color)}>{user.role}</span>
-              <button onClick={() => {setView('queue'); setSelectedCase(null);}} style={{ ...buttonStyle, background: '#6c757d', marginLeft: '10px' }}>
-                ← Back to Queue
-              </button>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px' }}>
-            <div style={{ background: 'white', padding: '20px', borderRadius: '10px' }}>
-              <h3 style={{ color: '#333', marginBottom: '15px' }}>Case Details Review</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
-                <div>
-                  <p><strong>Product:</strong> {selectedCase.productName}</p>
-                  <p><strong>Event:</strong> {selectedCase.eventDescription}</p>
-                  <p><strong>Patient:</strong> {selectedCase.patientInitials}</p>
-                </div>
-                <div>
-                  <p><strong>Causality:</strong> {selectedCase.causalityAssessment || 'Pending'}</p>
-                  <p><strong>Listedness:</strong> {selectedCase.listedness || 'Pending'}</p>
-                  <p><strong>Medical Reviewer:</strong> {selectedCase.medicalComments ? 'Completed' : 'Pending'}</p>
-                </div>
-              </div>
-              
-              <h4 style={{ marginTop: '20px', marginBottom: '10px' }}>Medical Review Comments</h4>
-              <p style={{ background: '#f8f9fa', padding: '10px', borderRadius: '5px' }}>
-                {selectedCase.medicalComments || 'No comments'}
-              </p>
-            </div>
-
-            <div style={{ background: 'white', padding: '20px', borderRadius: '10px' }}>
-              <h3 style={{ color: '#333', marginBottom: '15px' }}>Quality Checklist</h3>
-              <form onSubmit={submitQualityReview}>
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      name="completenessCheck"
-                      checked={qualityReview.completenessCheck}
-                      onChange={handleQualityReviewChange}
-                      style={{ marginRight: '10px' }}
-                    />
-                    All required fields complete
-                  </label>
-                </div>
-
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      name="consistencyCheck"
-                      checked={qualityReview.consistencyCheck}
-                      onChange={handleQualityReviewChange}
-                      style={{ marginRight: '10px' }}
-                    />
-                    Data consistency verified
-                  </label>
-                </div>
-
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                    <input
-                      type="checkbox"
-                      name="regulatoryCompliance"
-                      checked={qualityReview.regulatoryCompliance}
-                      onChange={handleQualityReviewChange}
-                      style={{ marginRight: '10px' }}
-                    />
-                    Regulatory compliance met
-                  </label>
-                </div>
-
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={labelStyle}>Data Quality Score (1-10)</label>
-                  <input
-                    type="number"
-                    name="dataQualityScore"
-                    min="1"
-                    max="10"
-                    value={qualityReview.dataQualityScore}
-                    onChange={handleQualityReviewChange}
-                    style={inputStyle}
-                  />
-                </div>
-
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={labelStyle}>Quality Comments</label>
-                  <textarea
-                    name="qualityComments"
-                    value={qualityReview.qualityComments}
-                    onChange={handleQualityReviewChange}
-                    style={{ ...inputStyle, height: '80px' }}
-                    placeholder="Any quality issues or observations"
-                  />
-                </div>
-
-                <div style={{ marginBottom: '15px' }}>
-                  <label style={labelStyle}>Final Decision *</label>
-                  <select
-                    name="finalStatus"
-                    value={qualityReview.finalStatus}
-                    onChange={handleQualityReviewChange}
-                    style={inputStyle}
-                    required
-                  >
-                    <option value="">Select</option>
-                    <option value="approved">✓ Approve Case</option>
-                    <option value="rejected">✗ Reject - Send Back</option>
-                  </select>
-                </div>
-
-                <button type="submit" style={{ ...buttonStyle, width: '100%', padding: '15px', background: '#fd7e14' }}>
-                  Finalize Quality Review
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    // Quality Review Queue
-    return (
-      <div style={dashboardStyle}>
-        <div style={headerStyle}>
-          <div>
-            <h1 style={{ color: '#1e3c72', margin: 0 }}>SkyVigilance</h1>
-            <p style={{ color: '#666', margin: '5px 0 0 0', fontSize: '14px' }}>
-              Step 4: Quality Review | Final Verification
-            </p>
-          </div>
-          <div>
-            <span style={{ marginRight: '20px', color: '#666' }}>
-              Welcome, <strong>{user.username}</strong>
-            </span>
-            <span style={stepBadgeStyle(user.color)}>{user.role}</span>
-            <button onClick={logout} style={{ ...buttonStyle, background: '#dc3545', marginLeft: '10px' }}>
-              Logout
-            </button>
-          </div>
-        </div>
-
-        <div style={{ background: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-          <h2 style={{ color: '#333', marginBottom: '20px' }}>Cases Pending Quality Review ({getCasesForRole().length})</h2>
-          
-          {getCasesForRole().length === 0 ? (
-            <p style={{ color: '#666', textAlign: 'center', padding: '40px' }}>
-              No cases pending quality review. All caught up!
-            </p>
-          ) : (
-            getCasesForRole().map(c => (
-              <div key={c.id} style={queueCardStyle}>
-                <div>
-                  <strong>Case: {c.caseNumber}</strong>
-                  <p style={{ margin: '5px 0', color: '#666' }}>Product: {c.productName}</p>
-                  <p style={{ margin: 0, color: '#999', fontSize: '12px' }}>
-                    Medical Review: {c.causalityAssessment ? 'Completed' : 'Pending'}
-                  </p>
-                </div>
-                <button onClick={() => startProcessing(c)} style={{ ...buttonStyle, background: '#fd7e14' }}>
-                  Start Quality Review
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  // Fallback
+  // CASE LIST VIEW
   return (
     <div style={dashboardStyle}>
       <div style={headerStyle}>
-        <h1>Unknown Role: {user?.role}</h1>
-        <button onClick={logout} style={buttonStyle}>Logout</button>
+        <div>
+          <h1 style={{ color: '#1e3c72', margin: 0 }}>SkyVigilance</h1>
+          <p style={{ color: '#666', margin: '5px 0 0 0', fontSize: '14px' }}>VigiServe Foundation - Argus-Aligned Safety Database</p>
+        </div>
+        <div>
+          <span style={{ marginRight: '20px', color: '#666' }}>
+            Welcome, <strong>{user.username}</strong> ({user.role})
+          </span>
+          <button onClick={() => setView('new')} style={buttonStyle}>
+            + New Case
+          </button>
+          <button onClick={logout} style={{ ...buttonStyle, background: '#dc3545' }}>
+            Logout
+          </button>
+        </div>
+      </div>
+
+      <div style={{ background: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+        <h2 style={{ color: '#333', marginBottom: '20px' }}>Safety Cases ({cases.length})</h2>
+        
+        {cases.length === 0 ? (
+          <p style={{ color: '#666', textAlign: 'center', padding: '40px' }}>
+            No cases yet. Click "New Case" to create an Argus-aligned safety report.
+          </p>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#f8f9fa' }}>
+                <th style={{ padding: '12px', borderBottom: '2px solid #dee2e6', textAlign: 'left' }}>Case #</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #dee2e6', textAlign: 'left' }}>Receipt Date</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #dee2e6', textAlign: 'left' }}>Product</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #dee2e6', textAlign: 'left' }}>Event</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #dee2e6', textAlign: 'left' }}>Seriousness</th>
+                <th style={{ padding: '12px', borderBottom: '2px solid #dee2e6', textAlign: 'left' }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cases.map(c => (
+                <tr key={c.id} style={{ borderBottom: '1px solid #dee2e6' }}>
+                  <td style={{ padding: '12px' }}>{c.case_number}</td>
+                  <td style={{ padding: '12px' }}>{c.receipt_date ? new Date(c.receipt_date).toLocaleDateString() : 'N/A'}</td>
+                  <td style={{ padding: '12px' }}>{c.product_name || 'N/A'}</td>
+                  <td style={{ padding: '12px' }}>{c.event_description ? c.event_description.substring(0, 50) + '...' : 'N/A'}</td>
+                  <td style={{ padding: '12px' }}>
+                    <span style={{
+                      padding: '4px 12px',
+                      borderRadius: '12px',
+                      background: c.seriousness === 'serious' ? '#dc3545' : '#28a745',
+                      color: 'white',
+                      fontSize: '12px',
+                      fontWeight: 'bold'
+                    }}>
+                      {c.seriousness?.toUpperCase() || 'NON-SERIOUS'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px' }}>{c.current_status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
 }
 
 export default App;
-'''
-
-print("Modified App.js created successfully!")
-print(f"Total length: {len(modified_app_js)} characters")
-print("\nKey changes made:")
-print("1. Added TRAINING_ACCOUNTS with 4 roles (Triage, Data Entry, Medical Review, Quality Review)")
-print("2. Added quick login buttons for training accounts")
-print("3. Added triageData state for Step 1 (4 minimum criteria)")
-print("4. Added medicalReview state for Step 3 (causality, listedness)")
-print("5. Added qualityReview state for Step 4 (checklist, final decision)")
-print("6. Added role-based routing - each role sees different interface")
-print("7. Added case filtering by currentStep/status for each role's queue")
-print("8. Added submit functions for each step that update case status")
