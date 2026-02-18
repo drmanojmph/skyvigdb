@@ -54,13 +54,21 @@ app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')
 # Initialize extensions
 db = SQLAlchemy(app)
 
-# CORS configuration - more permissive for development, restrictive for production
-cors_origins = os.getenv('CORS_ORIGINS', 'http://localhost:3000,https://*.vercel.app').split(',')
+# CORS configuration - ADD YOUR FRONTEND DOMAIN HERE
+cors_origins = [
+    'http://localhost:3000',
+    'https://safetydb.skyvigilance.com',  # YOUR FRONTEND - ADD THIS
+    'https://*.vercel.app'
+]
+
+# Or use this for testing (allows all origins - less secure)
+# CORS(app, supports_credentials=True)
+
 CORS(app, 
      supports_credentials=True, 
      origins=cors_origins,
      methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-     allow_headers=["Content-Type", "Authorization"])
+     allow_headers=["Content-Type", "Authorization", "Access-Control-Allow-Origin"])
 
 # Ensure upload folder exists
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
