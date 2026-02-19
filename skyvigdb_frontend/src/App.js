@@ -23,7 +23,7 @@ const USERS = [
   { username: "quality1", password: "train123", role: "Quality", step: 4 }
 ];
 
-/* ================= MEDDRA SIM ================= */
+/* ================= MEDDRA ================= */
 
 const MEDDRA = [
   { pt: "Headache", soc: "Nervous system disorders" },
@@ -177,6 +177,25 @@ export default function App() {
     setForm({ ...form, narrative: text });
   };
 
+  /* ================= WHO UMC ================= */
+
+  const runCausality = () => {
+
+    const m = form.medical || {};
+
+    let result = "Possible";
+
+    if (m.temporal && m.dechallenge && !m.alternative)
+      result = "Probable";
+
+    if (m.rechallenge) result = "Certain";
+
+    setForm({
+      ...form,
+      medical: { ...m, causality: result }
+    });
+  };
+
   /* ================= CIOMS EXPORT ================= */
 
   const exportCIOMS = () => {
@@ -189,8 +208,6 @@ export default function App() {
 
     doc.save("CIOMS.pdf");
   };
-
-  /* ================= BOARD ================= */
 
   const queue = cases.filter(c => c.currentStep === user.step);
 
@@ -225,20 +242,77 @@ export default function App() {
 
           <h3 className="font-semibold mb-2">New Case Intake</h3>
 
-          <input
-            type="date"
-            className="border p-2 mr-2"
+          <div className="grid grid-cols-2 gap-2">
+
+            <input
+              placeholder="Patient Initials"
+              className="border p-2"
+              onChange={e =>
+                setForm({
+                  ...form,
+                  triage: {
+                    ...form.triage,
+                    patientInitials: e.target.value
+                  }
+                })
+              }
+            />
+
+            <input
+              placeholder="Country"
+              className="border p-2"
+              onChange={e =>
+                setForm({
+                  ...form,
+                  triage: {
+                    ...form.triage,
+                    country: e.target.value
+                  }
+                })
+              }
+            />
+
+            <input
+              placeholder="Reporter Name"
+              className="border p-2"
+              onChange={e =>
+                setForm({
+                  ...form,
+                  triage: {
+                    ...form.triage,
+                    reporter: e.target.value
+                  }
+                })
+              }
+            />
+
+            <input
+              placeholder="Drug Name"
+              className="border p-2"
+              onChange={e =>
+                setForm({
+                  ...form,
+                  products: [{ name: e.target.value }]
+                })
+              }
+            />
+
+          </div>
+
+          <textarea
+            placeholder="Event Description"
+            className="border p-2 w-full mt-2"
             onChange={e =>
               setForm({
                 ...form,
-                triage: { receiptDate: e.target.value }
+                events: [{ term: e.target.value }]
               })
             }
           />
 
           <button
             onClick={createCase}
-            className="bg-blue-600 text-white px-3 py-1 rounded"
+            className="bg-blue-600 text-white px-3 py-1 rounded mt-2"
           >
             Create Case
           </button>
@@ -246,7 +320,7 @@ export default function App() {
         </div>
       )}
 
-      {/* WORKFLOW BOARD */}
+      {/* BOARD */}
 
       <div className="grid grid-cols-5 gap-4">
 
@@ -279,21 +353,32 @@ export default function App() {
 
       </div>
 
-      {/* CASE MODAL */}
+      {/* MODAL */}
 
       {selected && (
 
         <div className="fixed inset-0 bg-black bg-opacity-30 flex justify-center items-center">
 
-          <div className="bg-white p-6 rounded-xl w-[600px]">
+          <div className="bg-white p-6 rounded-xl w-[700px]">
 
-            <h3 className="font-semibold mb-3">
-              Case {selected.caseNumber}
-            </h3>
+            <div className="flex justify-between mb-3">
+
+              <h3 className="font-semibold">
+                Case {selected.caseNumber}
+              </h3>
+
+              <button
+                onClick={() => setSelected(null)}
+                className="text-red-600 text-xl"
+              >
+                ✕
+              </button>
+
+            </div>
 
             {/* TABS */}
 
-            <div className="flex gap-2 mb-3 flex-wrap">
+            <div className="flex gap-2 flex-wrap mb-3">
 
               {[
                 "general",
@@ -302,7 +387,8 @@ export default function App() {
                 "events",
                 "medical",
                 "narrative",
-                "quality"
+                "quality",
+                "attachments"
               ].map(t => (
                 <button
                   key={t}
@@ -319,87 +405,26 @@ export default function App() {
 
             </div>
 
-            {/* GENERAL */}
-
-            {tab === "general" && (
-              <input
-                placeholder="Report Type"
-                className="border p-2 w-full"
-                onChange={e =>
-                  setForm({
-                    ...form,
-                    general: { reportType: e.target.value }
-                  })
-                }
-              />
-            )}
-
-            {/* PATIENT */}
-
-            {tab === "patient" && (
-              <div className="grid grid-cols-2 gap-2">
-
-                <input
-                  placeholder="Age"
-                  className="border p-2"
-                  onChange={e =>
-                    setForm({
-                      ...form,
-                      patient: {
-                        ...form.patient,
-                        age: e.target.value
-                      }
-                    })
-                  }
-                />
-
-                <input
-                  placeholder="Sex"
-                  className="border p-2"
-                  onChange={e =>
-                    setForm({
-                      ...form,
-                      patient: {
-                        ...form.patient,
-                        sex: e.target.value
-                      }
-                    })
-                  }
-                />
-
-              </div>
-            )}
-
-            {/* PRODUCTS */}
-
-            {tab === "products" && (
-              <input
-                placeholder="Drug Name"
-                className="border p-2 w-full"
-                onChange={e =>
-                  setForm({
-                    ...form,
-                    products: [{ name: e.target.value }]
-                  })
-                }
-              />
-            )}
-
-            {/* EVENTS + MEDDRA */}
+            {/* EVENTS + SERIOUSNESS */}
 
             {tab === "events" && (
+
               <div>
 
                 <input
                   placeholder="Event Term"
                   className="border p-2 w-full"
                   onChange={e => {
+
                     const term = e.target.value;
+
                     setForm({
                       ...form,
                       events: [{ term }]
                     });
+
                     searchMeddra(term);
+
                   }}
                 />
 
@@ -409,27 +434,144 @@ export default function App() {
                   </div>
                 ))}
 
+                <div className="grid grid-cols-2 gap-2 mt-2">
+
+                  {[
+                    "Death",
+                    "Life Threatening",
+                    "Hospitalization",
+                    "Disability",
+                    "Congenital",
+                    "Medically Important"
+                  ].map(s => (
+
+                    <label key={s}>
+
+                      <input type="checkbox" /> {s}
+
+                    </label>
+
+                  ))}
+
+                </div>
+
               </div>
+
+            )}
+
+            {/* PRODUCTS */}
+
+            {tab === "products" && (
+
+              <div>
+
+                <button
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      products:[...(form.products||[]),{}]
+                    })
+                  }
+                  className="bg-blue-600 text-white px-2 py-1 rounded"
+                >
+                  Add Drug
+                </button>
+
+                {(form.products||[]).map((p,i)=>(
+
+                  <div key={i} className="grid grid-cols-4 gap-2 mt-2">
+
+                    <input
+                      placeholder="Drug"
+                      className="border p-1"
+                      onChange={e=>{
+                        const arr=[...form.products];
+                        arr[i].name=e.target.value;
+                        setForm({...form,products:arr});
+                      }}
+                    />
+
+                    <input
+                      placeholder="Dose"
+                      className="border p-1"
+                      onChange={e=>{
+                        const arr=[...form.products];
+                        arr[i].dose=e.target.value;
+                        setForm({...form,products:arr});
+                      }}
+                    />
+
+                    <input
+                      placeholder="Route"
+                      className="border p-1"
+                    />
+
+                    <input
+                      type="date"
+                      className="border p-1"
+                    />
+
+                  </div>
+
+                ))}
+
+              </div>
+
             )}
 
             {/* MEDICAL */}
 
             {tab === "medical" && (
-              <input
-                placeholder="Causality"
-                className="border p-2 w-full"
-                onChange={e =>
-                  setForm({
-                    ...form,
-                    medical: { causality: e.target.value }
-                  })
-                }
-              />
+
+              <div className="space-y-2">
+
+                <label>
+                  <input type="checkbox"
+                    onChange={e =>
+                      setForm({
+                        ...form,
+                        medical:{
+                          ...form.medical,
+                          temporal:e.target.checked
+                        }
+                      })
+                    }
+                  /> Temporal
+                </label>
+
+                <label>
+                  <input type="checkbox"
+                    onChange={e =>
+                      setForm({
+                        ...form,
+                        medical:{
+                          ...form.medical,
+                          dechallenge:e.target.checked
+                        }
+                      })
+                    }
+                  /> Dechallenge
+                </label>
+
+                <button
+                  onClick={runCausality}
+                  className="bg-purple-600 text-white px-3 py-1 rounded"
+                >
+                  WHO-UMC
+                </button>
+
+                <div>
+                  Result: {form.medical?.causality}
+                </div>
+
+              </div>
+
             )}
 
             {/* NARRATIVE */}
 
             {tab === "narrative" && (
+
               <div>
 
                 <button
@@ -448,24 +590,47 @@ export default function App() {
                 />
 
               </div>
+
             )}
 
-            {/* QUALITY */}
+            {/* ATTACHMENTS */}
 
-            {tab === "quality" && (
-              <select
-                className="border p-2"
-                onChange={e =>
-                  setForm({
-                    ...form,
-                    quality: { finalStatus: e.target.value }
-                  })
-                }
-              >
-                <option value="approved">Approve</option>
-                <option value="reject">Return</option>
-              </select>
+            {tab === "attachments" && (
+
+              <div>
+
+                <input
+                  type="file"
+                  onChange={e =>
+                    setForm({
+                      ...form,
+                      attachments:[
+                        ...(form.attachments||[]),
+                        e.target.files[0].name
+                      ]
+                    })
+                  }
+                />
+
+                {(form.attachments||[]).map((f,i)=>(
+                  <div key={i}>{f}</div>
+                ))}
+
+              </div>
+
             )}
+
+            {/* TIMELINE */}
+
+            <div className="mt-4 text-sm">
+
+              <div>Created → Triage</div>
+              {selected.currentStep >= 2 && <div>Data Entry Complete</div>}
+              {selected.currentStep >= 3 && <div>Medical Review</div>}
+              {selected.currentStep >= 4 && <div>Quality Review</div>}
+              {selected.currentStep >= 5 && <div>Approved</div>}
+
+            </div>
 
             {/* ACTIONS */}
 
