@@ -14,11 +14,24 @@ const API =
   process.env.REACT_APP_API_URL ||
   "https://skyvigdb-backend.onrender.com/api";
 
+/* ================= USERS ================= */
+
 const USERS = [
   { username: "triage1", password: "train123", role: "Triage", step: 1 },
   { username: "dataentry1", password: "train123", role: "Data Entry", step: 2 },
   { username: "medical1", password: "train123", role: "Medical", step: 3 },
   { username: "quality1", password: "train123", role: "Quality", step: 4 }
+];
+
+/* ================= MEDDRA SIM ================= */
+
+const MEDDRA = [
+  { pt: "Headache", soc: "Nervous system disorders" },
+  { pt: "Nausea", soc: "Gastrointestinal disorders" },
+  { pt: "Rash", soc: "Skin disorders" },
+  { pt: "Fever", soc: "General disorders" },
+  { pt: "Vomiting", soc: "Gastrointestinal disorders" },
+  { pt: "Anaphylaxis", soc: "Immune disorders" }
 ];
 
 const STAGES = [
@@ -29,12 +42,7 @@ const STAGES = [
   { name: "Approved", step: 5 }
 ];
 
-const MEDDRA = [
-  { pt: "Headache", soc: "Nervous system disorders" },
-  { pt: "Nausea", soc: "Gastrointestinal disorders" },
-  { pt: "Rash", soc: "Skin disorders" },
-  { pt: "Fever", soc: "General disorders" }
-];
+/* ================= APP ================= */
 
 export default function App() {
 
@@ -43,6 +51,7 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({});
   const [login, setLogin] = useState({ username: "", password: "" });
+  const [tab, setTab] = useState("general");
   const [meddraResults, setMeddraResults] = useState([]);
 
   useEffect(() => {
@@ -50,43 +59,37 @@ export default function App() {
   }, [user]);
 
   const fetchCases = async () => {
-    try {
-      const res = await axios.get(API + "/cases");
-      setCases(res.data || []);
-    } catch (err) {
-      console.error(err);
-    }
+    const res = await axios.get(API + "/cases");
+    setCases(res.data || []);
   };
 
-  // ================= LOGIN =================
+  /* ================= LOGIN ================= */
 
   const doLogin = () => {
-
     const found = USERS.find(
-      (u) =>
+      u =>
         u.username === login.username &&
         u.password === login.password
     );
 
-    if (found) {
-      setUser(found);
-    } else {
-      alert("Invalid credentials");
-    }
+    if (found) setUser(found);
+    else alert("Invalid credentials");
   };
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-blue-200 to-purple-200">
 
-        <div className="bg-white p-6 rounded shadow w-80">
+        <div className="bg-white p-8 rounded-xl shadow w-80">
 
-          <h2 className="font-bold mb-3">Login</h2>
+          <h2 className="text-xl font-bold mb-4 text-center">
+            SkyVigilance Training
+          </h2>
 
           <input
             placeholder="Username"
             className="border p-2 w-full mb-2"
-            onChange={(e) =>
+            onChange={e =>
               setLogin({ ...login, username: e.target.value })
             }
           />
@@ -94,15 +97,15 @@ export default function App() {
           <input
             type="password"
             placeholder="Password"
-            className="border p-2 w-full mb-2"
-            onChange={(e) =>
+            className="border p-2 w-full mb-3"
+            onChange={e =>
               setLogin({ ...login, password: e.target.value })
             }
           />
 
           <button
             onClick={doLogin}
-            className="bg-blue-600 text-white w-full p-2"
+            className="bg-blue-600 text-white w-full p-2 rounded"
           >
             Login
           </button>
@@ -112,94 +115,92 @@ export default function App() {
     );
   }
 
-  // ================= DASHBOARD =================
+  /* ================= DASHBOARD ================= */
 
-  const chartData = STAGES.map((s) => ({
+  const chartData = STAGES.map(s => ({
     name: s.name,
-    value: cases.filter((c) => c.currentStep === s.step).length
+    value: cases.filter(c => c.currentStep === s.step).length
   }));
 
-  // ================= CREATE CASE =================
+  /* ================= TRIAGE CREATE ================= */
 
   const createCase = async () => {
 
-    try {
+    const payload = {
+      triage: form.triage || {},
+      general: form.general || {},
+      patient: form.patient || {},
+      products: form.products || [],
+      events: form.events || []
+    };
 
-      const payload = {
-        receiptDate: form.receiptDate || "",
-        triage: form
-      };
+    await axios.post(API + "/cases", payload);
 
-      await axios.post(API + "/cases", payload);
-
-      setForm({});
-      fetchCases();
-
-    } catch (err) {
-      console.error(err);
-    }
+    setForm({});
+    fetchCases();
   };
 
-  // ================= UPDATE =================
+  /* ================= UPDATE ================= */
 
   const updateCase = async () => {
 
-    if (!selected) return;
+    await axios.put(API + "/cases/" + selected.id, form);
 
-    try {
-
-      await axios.put(API + "/cases/" + selected.id, form);
-
-      setSelected(null);
-      setForm({});
-      fetchCases();
-
-    } catch (err) {
-      console.error(err);
-    }
+    setSelected(null);
+    setForm({});
+    fetchCases();
   };
 
-  // ================= MEDDRA =================
+  /* ================= MEDDRA SEARCH ================= */
 
   const searchMeddra = (q) => {
 
-    const res = MEDDRA.filter((m) =>
+    const res = MEDDRA.filter(m =>
       m.pt.toLowerCase().includes(q.toLowerCase())
     );
 
     setMeddraResults(res);
   };
 
-  // ================= NARRATIVE =================
+  /* ================= NARRATIVE ================= */
 
   const generateNarrative = () => {
 
-    const text =
-      "Patient experienced adverse event after suspect drug.";
+    const p = form.patient || {};
+    const d = form.products?.[0] || {};
+    const e = form.events?.[0] || {};
+
+    const text = `A ${p.age || ""} year old ${p.sex || ""} received ${
+      d.name || ""
+    }. The patient developed ${e.term || ""}.`;
 
     setForm({ ...form, narrative: text });
   };
 
-  // ================= CIOMS =================
+  /* ================= CIOMS EXPORT ================= */
 
   const exportCIOMS = () => {
 
     const doc = new jsPDF();
 
     doc.text("CIOMS I Report", 10, 10);
-    doc.text("Case: " + (selected?.caseNumber || ""), 10, 20);
+    doc.text("Case: " + selected.caseNumber, 10, 20);
     doc.text(form.narrative || "", 10, 30);
 
     doc.save("CIOMS.pdf");
   };
 
-  // ================= MAIN UI =================
+  /* ================= BOARD ================= */
+
+  const queue = cases.filter(c => c.currentStep === user.step);
 
   return (
-    <div className="p-4">
+    <div className="min-h-screen bg-gray-100 p-4">
+
+      {/* HEADER */}
 
       <div className="flex justify-between mb-4">
-        <div>{user.role}</div>
+        <div className="font-semibold">{user.role}</div>
         <button onClick={() => setUser(null)}>Logout</button>
       </div>
 
@@ -211,56 +212,60 @@ export default function App() {
             <XAxis dataKey="name" />
             <YAxis />
             <Tooltip />
-            <Bar dataKey="value" />
+            <Bar dataKey="value" fill="#6366f1" />
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      {/* TRIAGE */}
+      {/* TRIAGE SCREEN */}
 
       {user.step === 1 && (
-        <div className="border p-3 mb-4">
 
-          <h3>New Case</h3>
+        <div className="bg-blue-50 p-4 rounded mb-4">
+
+          <h3 className="font-semibold mb-2">New Case Intake</h3>
 
           <input
             type="date"
             className="border p-2 mr-2"
-            onChange={(e) =>
-              setForm({ ...form, receiptDate: e.target.value })
+            onChange={e =>
+              setForm({
+                ...form,
+                triage: { receiptDate: e.target.value }
+              })
             }
           />
 
           <button
             onClick={createCase}
-            className="bg-green-600 text-white px-3"
+            className="bg-blue-600 text-white px-3 py-1 rounded"
           >
-            Create
+            Create Case
           </button>
 
         </div>
       )}
 
-      {/* WORKFLOW */}
+      {/* WORKFLOW BOARD */}
 
       <div className="grid grid-cols-5 gap-4">
 
-        {STAGES.map((stage) => (
+        {STAGES.map(stage => (
 
-          <div key={stage.step} className="bg-gray-200 p-2">
+          <div key={stage.step} className="bg-white p-3 rounded shadow">
 
-            <h4>{stage.name}</h4>
+            <h4 className="font-semibold mb-2">{stage.name}</h4>
 
             {cases
-              .filter((c) => c.currentStep === stage.step)
-              .map((c) => (
+              .filter(c => c.currentStep === stage.step)
+              .map(c => (
 
                 <div
                   key={c.id}
-                  className="bg-white p-2 m-1 cursor-pointer"
+                  className="bg-indigo-50 p-2 rounded mb-2 cursor-pointer"
                   onClick={() => {
                     setSelected(c);
-                    setForm({});
+                    setForm(c);
                   }}
                 >
                   {c.caseNumber}
@@ -274,59 +279,208 @@ export default function App() {
 
       </div>
 
-      {/* MODAL */}
+      {/* CASE MODAL */}
 
       {selected && (
 
         <div className="fixed inset-0 bg-black bg-opacity-30 flex justify-center items-center">
 
-          <div className="bg-white p-4 w-96">
+          <div className="bg-white p-6 rounded-xl w-[600px]">
 
-            <h3>{selected.caseNumber}</h3>
+            <h3 className="font-semibold mb-3">
+              Case {selected.caseNumber}
+            </h3>
 
-            <input
-              placeholder="Event"
-              className="border p-2 w-full mb-2"
-              onChange={(e) => {
-                const term = e.target.value;
-                setForm({ ...form, event: term });
-                searchMeddra(term);
-              }}
-            />
+            {/* TABS */}
 
-            {meddraResults.map((m, i) => (
-              <div key={i}>
-                {m.pt} — {m.soc}
+            <div className="flex gap-2 mb-3 flex-wrap">
+
+              {[
+                "general",
+                "patient",
+                "products",
+                "events",
+                "medical",
+                "narrative",
+                "quality"
+              ].map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`px-3 py-1 rounded ${
+                    tab === t
+                      ? "bg-indigo-600 text-white"
+                      : "bg-gray-200"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+
+            </div>
+
+            {/* GENERAL */}
+
+            {tab === "general" && (
+              <input
+                placeholder="Report Type"
+                className="border p-2 w-full"
+                onChange={e =>
+                  setForm({
+                    ...form,
+                    general: { reportType: e.target.value }
+                  })
+                }
+              />
+            )}
+
+            {/* PATIENT */}
+
+            {tab === "patient" && (
+              <div className="grid grid-cols-2 gap-2">
+
+                <input
+                  placeholder="Age"
+                  className="border p-2"
+                  onChange={e =>
+                    setForm({
+                      ...form,
+                      patient: {
+                        ...form.patient,
+                        age: e.target.value
+                      }
+                    })
+                  }
+                />
+
+                <input
+                  placeholder="Sex"
+                  className="border p-2"
+                  onChange={e =>
+                    setForm({
+                      ...form,
+                      patient: {
+                        ...form.patient,
+                        sex: e.target.value
+                      }
+                    })
+                  }
+                />
+
               </div>
-            ))}
+            )}
 
-            <textarea
-              className="border w-full mt-2"
-              value={form.narrative || ""}
-              onChange={(e) =>
-                setForm({ ...form, narrative: e.target.value })
-              }
-            />
+            {/* PRODUCTS */}
 
-            <div className="flex justify-between mt-3">
+            {tab === "products" && (
+              <input
+                placeholder="Drug Name"
+                className="border p-2 w-full"
+                onChange={e =>
+                  setForm({
+                    ...form,
+                    products: [{ name: e.target.value }]
+                  })
+                }
+              />
+            )}
 
-              <button
-                onClick={generateNarrative}
-                className="bg-blue-600 text-white px-2"
+            {/* EVENTS + MEDDRA */}
+
+            {tab === "events" && (
+              <div>
+
+                <input
+                  placeholder="Event Term"
+                  className="border p-2 w-full"
+                  onChange={e => {
+                    const term = e.target.value;
+                    setForm({
+                      ...form,
+                      events: [{ term }]
+                    });
+                    searchMeddra(term);
+                  }}
+                />
+
+                {meddraResults.map((m, i) => (
+                  <div key={i} className="text-sm">
+                    {m.pt} — {m.soc}
+                  </div>
+                ))}
+
+              </div>
+            )}
+
+            {/* MEDICAL */}
+
+            {tab === "medical" && (
+              <input
+                placeholder="Causality"
+                className="border p-2 w-full"
+                onChange={e =>
+                  setForm({
+                    ...form,
+                    medical: { causality: e.target.value }
+                  })
+                }
+              />
+            )}
+
+            {/* NARRATIVE */}
+
+            {tab === "narrative" && (
+              <div>
+
+                <button
+                  onClick={generateNarrative}
+                  className="bg-purple-600 text-white px-3 py-1 rounded"
+                >
+                  Generate
+                </button>
+
+                <textarea
+                  className="border w-full mt-2"
+                  value={form.narrative || ""}
+                  onChange={e =>
+                    setForm({ ...form, narrative: e.target.value })
+                  }
+                />
+
+              </div>
+            )}
+
+            {/* QUALITY */}
+
+            {tab === "quality" && (
+              <select
+                className="border p-2"
+                onChange={e =>
+                  setForm({
+                    ...form,
+                    quality: { finalStatus: e.target.value }
+                  })
+                }
               >
-                Generate
-              </button>
+                <option value="approved">Approve</option>
+                <option value="reject">Return</option>
+              </select>
+            )}
+
+            {/* ACTIONS */}
+
+            <div className="flex justify-between mt-4">
 
               <button
                 onClick={exportCIOMS}
-                className="bg-purple-600 text-white px-2"
+                className="bg-indigo-600 text-white px-3 py-1 rounded"
               >
                 CIOMS
               </button>
 
               <button
                 onClick={updateCase}
-                className="bg-green-600 text-white px-2"
+                className="bg-green-600 text-white px-3 py-1 rounded"
               >
                 Submit
               </button>
