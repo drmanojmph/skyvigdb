@@ -291,30 +291,32 @@ export default function App() {
       <div className="grid grid-cols-2 gap-3">
         {field("Receipt Date",
           <input type="date" className="border border-gray-300 rounded px-3 py-2 text-sm"
+            value={form.triage?.receiptDate || ""}
             onChange={e => setNested("triage", "receiptDate", e.target.value)} />
         )}
         {field("Country",
-          inp({ placeholder: "e.g. United States", onChange: e => setNested("triage", "country", e.target.value) })
+          inp({ placeholder: "e.g. United States", value: form.triage?.country || "", onChange: e => setNested("triage", "country", e.target.value) })
         )}
         {field("Patient Initials",
-          inp({ placeholder: "e.g. J.D.", onChange: e => setNested("triage", "patientInitials", e.target.value) })
+          inp({ placeholder: "e.g. J.D.", value: form.triage?.patientInitials || "", onChange: e => setNested("triage", "patientInitials", e.target.value) })
         )}
         {field("Reporter Name",
-          inp({ placeholder: "Reporter full name", onChange: e => setNested("triage", "reporter", e.target.value) })
+          inp({ placeholder: "Reporter full name", value: form.triage?.reporter || "", onChange: e => setNested("triage", "reporter", e.target.value) })
         )}
         {field("Reporter Qualification",
           sel(["Physician", "Pharmacist", "Nurse", "Consumer", "Lawyer", "Other HCP"],
-            { onChange: e => setNested("triage", "qualification", e.target.value) })
+            { value: form.triage?.qualification || "", onChange: e => setNested("triage", "qualification", e.target.value) })
         )}
         {field("Suspect Drug",
-          inp({ placeholder: "Drug name", onChange: e => setForm(f => ({ ...f, products: [{ name: e.target.value }] })) })
+          inp({ placeholder: "Drug name", value: (form.products || [])[0]?.name || "", onChange: e => setForm(f => ({ ...f, products: [{ ...(f.products?.[0] || {}), name: e.target.value }] })) })
         )}
       </div>
       {field("Event Description",
         <textarea
           className="border border-gray-300 rounded px-3 py-2 text-sm w-full h-20 resize-none"
           placeholder="Describe the adverse event..."
-          onChange={e => setForm(f => ({ ...f, events: [{ term: e.target.value }] }))}
+          value={(form.events || [])[0]?.term || ""}
+          onChange={e => setForm(f => ({ ...f, events: [{ ...(f.events?.[0] || {}), term: e.target.value }] }))}
         />
       )}
       <button onClick={createCase}
@@ -659,10 +661,10 @@ export default function App() {
             Your role handles step {user.step} ({user.role}).
           </div>
         )}
-        {!canEdit && <ReadOnlySummary />}
-        {canEdit && selected.currentStep === 2 && <DataEntryForm />}
-        {canEdit && selected.currentStep === 3 && <MedicalForm />}
-        {canEdit && selected.currentStep === 4 && <QualityForm />}
+        {!canEdit && ReadOnlySummary()}
+        {canEdit && selected.currentStep === 2 && DataEntryForm()}
+        {canEdit && selected.currentStep === 3 && MedicalForm()}
+        {canEdit && selected.currentStep === 4 && QualityForm()}
         {canEdit && selected.currentStep === 5 && (
           <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center text-green-700 font-semibold">
             ✅ Case approved and closed.
@@ -724,7 +726,7 @@ export default function App() {
         </div>
 
         {/* Triage intake form */}
-        {user.step === 1 && <TriageForm />}
+        {user.step === 1 && TriageForm()}
 
         {/* Kanban board */}
         <div className="grid grid-cols-5 gap-4">
