@@ -56,7 +56,11 @@ class Case(db.Model):
         }
 
 
+# ================= INIT =================
+
 with app.app_context():
+
+    # IMPORTANT: ensures schema always matches model
     db.create_all()
 
 
@@ -70,70 +74,93 @@ def health():
 @app.route("/api/cases", methods=["GET"])
 def get_cases():
 
-    cases = Case.query.all()
-    return jsonify([c.to_dict() for c in cases])
+    try:
+        cases = Case.query.all()
+        return jsonify([c.to_dict() for c in cases])
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/cases", methods=["POST"])
 def create_case():
 
-    data = request.json or {}
+    try:
 
-    case = Case(
-        id="PV-" + str(int(datetime.utcnow().timestamp())),
-        current_step=2,
-        status="Data Entry",
-        triage=data.get("triage"),
-        general=data.get("general"),
-        patient=data.get("patient"),
-        products=data.get("products"),
-        events=data.get("events")
-    )
+        data = request.json or {}
 
-    db.session.add(case)
-    db.session.commit()
+        case = Case(
+            id="PV-" + str(int(datetime.utcnow().timestamp())),
+            current_step=2,
+            status="Data Entry",
+            triage=data.get("triage", {}),
+            general=data.get("general", {}),
+            patient=data.get("patient", {}),
+            products=data.get("products", []),
+            events=data.get("events", [])
+        )
 
-    return jsonify(case.to_dict())
+        db.session.add(case)
+        db.session.commit()
+
+        return jsonify(case.to_dict())
+
+    except Exception as e:
+
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/cases/<case_id>", methods=["PUT"])
 def update_case(case_id):
 
-    case = Case.query.get_or_404(case_id)
-    data = request.json or {}
+    try:
 
-    step = case.current_step
+        case = Case.query.get_or_404(case_id)
+        data = request.json or {}
 
-    if step == 2:
-        case.general = data.get("general")
-        case.patient = data.get("patient")
-        case.products = data.get("products")
-        case.events = data.get("events")
+        step = case.current_step
 
-        case.current_step = 3
-        case.status = "Medical"
+        if step == 2:
 
-    elif step == 3:
-        case.medical = data.get("medical")
-        case.narrative = data.get("narrative")
+            case.general = data.get("general", {})
+            case.patient = data.get("patient", {})
+            case.products = data.get("products", [])
+            case.events = data.get("events", [])
 
-        case.current_step = 4
-        case.status = "Quality"
-
-    elif step == 4:
-
-        case.quality = data.get("quality")
-
-        if data.get("quality", {}).get("finalStatus") == "approved":
-            case.current_step = 5
-            case.status = "Approved"
-        else:
             case.current_step = 3
-            case.status = "Returned"
+            case.status = "Medical"
 
-    db.session.commit()
+        elif step == 3:
 
-    return jsonify(case.to_dict())
+            case.medical = data.get("medical", {})
+            case.narrative = data.get("narrative", "")
+
+            case.current_step = 4
+            case.status = "Quality"
+
+        elif step == 4:
+
+            case.quality = data.get("quality", {})
+
+            if data.get("quality", {}).get("finalStatus") == "approved":
+
+                case.current_step = 5
+                case.status = "Approved"
+
+            else:
+
+                case.current_step = 3
+                case.status = "Returned"
+
+        db.session.commit()
+
+        return jsonify(case.to_dict())
+
+    except Exception as e:
+
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
