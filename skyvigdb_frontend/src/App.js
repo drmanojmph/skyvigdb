@@ -5,11 +5,11 @@ const API =
   process.env.REACT_APP_API_URL ||
   "https://skyvigdb-backend.onrender.com/api";
 
-const ROLES = [
-  { role: "Triage", step: 1, color: "bg-blue-500" },
-  { role: "Data Entry", step: 2, color: "bg-amber-500" },
-  { role: "Medical Review", step: 3, color: "bg-purple-500" },
-  { role: "Quality", step: 4, color: "bg-emerald-600" }
+const USERS = [
+  { username: "triage1", password: "train123", role: "Triage", step: 1 },
+  { username: "dataentry1", password: "train123", role: "Data Entry", step: 2 },
+  { username: "medical1", password: "train123", role: "Medical Review", step: 3 },
+  { username: "quality1", password: "train123", role: "Quality", step: 4 }
 ];
 
 const STAGES = [
@@ -25,6 +25,9 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [cases, setCases] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [form, setForm] = useState({});
+  const [login, setLogin] = useState({ username: "", password: "" });
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (user) fetchCases();
@@ -37,43 +40,100 @@ export default function App() {
 
   // ================= LOGIN =================
 
+  const doLogin = () => {
+
+    const found = USERS.find(
+      u =>
+        u.username === login.username &&
+        u.password === login.password
+    );
+
+    if (!found) {
+      setError("Invalid credentials");
+      return;
+    }
+
+    setUser(found);
+  };
+
   if (!user) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-blue-200 to-purple-200">
 
-        <div className="bg-white p-10 rounded-xl shadow w-96">
+        <div className="bg-white p-8 rounded-xl shadow w-96">
 
-          <h1 className="text-xl font-bold mb-6 text-center">
-            SkyVigilance Training
-          </h1>
+          <h2 className="text-xl font-bold mb-4 text-center">
+            SkyVigilance Login
+          </h2>
 
-          {ROLES.map(r => (
-            <button
-              key={r.role}
-              onClick={() => setUser(r)}
-              className={`w-full text-white p-3 rounded mb-3 ${r.color}`}
-            >
-              Login as {r.role}
-            </button>
-          ))}
+          {error && (
+            <div className="text-red-500 mb-2">{error}</div>
+          )}
+
+          <input
+            placeholder="Username"
+            className="border p-2 w-full mb-2"
+            onChange={e =>
+              setLogin({ ...login, username: e.target.value })
+            }
+          />
+
+          <input
+            type="password"
+            placeholder="Password"
+            className="border p-2 w-full mb-3"
+            onChange={e =>
+              setLogin({ ...login, password: e.target.value })
+            }
+          />
+
+          <button
+            onClick={doLogin}
+            className="bg-blue-600 text-white w-full p-2 rounded"
+          >
+            Login
+          </button>
+
+          <div className="text-xs mt-4 text-gray-500">
+            Training accounts: triage1 / dataentry1 / medical1 / quality1
+          </div>
 
         </div>
       </div>
     );
   }
 
-  // ================= DASHBOARD =================
+  // ================= CREATE CASE =================
+
+  const createCase = async () => {
+
+    await axios.post(API + "/cases", form);
+
+    setForm({});
+    fetchCases();
+  };
+
+  // ================= UPDATE CASE =================
+
+  const updateCase = async () => {
+
+    await axios.put(API + "/cases/" + selected.id, form);
+
+    setSelected(null);
+    setForm({});
+    fetchCases();
+  };
+
+  const queue = cases.filter(c => c.currentStep === user.step);
+
+  // ================= MAIN UI =================
 
   return (
     <div className="min-h-screen bg-gray-100">
 
-      {/* HEADER */}
+      <div className="bg-white p-4 shadow flex justify-between">
 
-      <div className="bg-white shadow p-4 flex justify-between">
-
-        <h2 className="font-semibold">
-          {user.role}
-        </h2>
+        <div>{user.role}</div>
 
         <button
           onClick={() => setUser(null)}
@@ -83,6 +143,39 @@ export default function App() {
         </button>
 
       </div>
+
+      {/* TRIAGE FORM */}
+
+      {user.step === 1 && (
+        <div className="p-4">
+
+          <h3 className="font-semibold mb-2">New Case</h3>
+
+          <input
+            placeholder="Reporter Name"
+            className="border p-2 mr-2"
+            onChange={e =>
+              setForm({ ...form, reporterName: e.target.value })
+            }
+          />
+
+          <input
+            placeholder="Product"
+            className="border p-2 mr-2"
+            onChange={e =>
+              setForm({ ...form, productName: e.target.value })
+            }
+          />
+
+          <button
+            onClick={createCase}
+            className="bg-green-600 text-white px-3 py-1 rounded"
+          >
+            Create
+          </button>
+
+        </div>
+      )}
 
       {/* WORKFLOW BOARD */}
 
@@ -103,7 +196,10 @@ export default function App() {
                 <div
                   key={c.id}
                   className="bg-white p-3 rounded shadow mb-2 cursor-pointer"
-                  onClick={() => setSelected(c)}
+                  onClick={() => {
+                    setSelected(c);
+                    setForm({});
+                  }}
                 >
                   <div className="font-semibold">
                     {c.caseNumber}
@@ -123,7 +219,7 @@ export default function App() {
 
       </div>
 
-      {/* CASE MODAL */}
+      {/* CASE EDIT MODAL */}
 
       {selected && (
 
@@ -135,16 +231,58 @@ export default function App() {
               Case {selected.caseNumber}
             </h3>
 
-            <p>Status: {selected.status}</p>
-            <p>Step: {selected.currentStep}</p>
+            {/* DATA ENTRY */}
 
-            <div className="flex justify-end mt-4">
+            {user.step === 2 && (
+              <input
+                placeholder="Patient Age"
+                className="border p-2 w-full mb-2"
+                onChange={e =>
+                  setForm({ patientAge: e.target.value })
+                }
+              />
+            )}
+
+            {/* MEDICAL */}
+
+            {user.step === 3 && (
+              <input
+                placeholder="Causality"
+                className="border p-2 w-full mb-2"
+                onChange={e =>
+                  setForm({ causality: e.target.value })
+                }
+              />
+            )}
+
+            {/* QUALITY */}
+
+            {user.step === 4 && (
+              <select
+                className="border p-2 w-full mb-2"
+                onChange={e =>
+                  setForm({ finalStatus: e.target.value })
+                }
+              >
+                <option value="approved">Approve</option>
+                <option value="reject">Return</option>
+              </select>
+            )}
+
+            <div className="flex justify-end gap-2">
 
               <button
                 onClick={() => setSelected(null)}
                 className="bg-gray-300 px-3 py-1 rounded"
               >
-                Close
+                Cancel
+              </button>
+
+              <button
+                onClick={updateCase}
+                className="bg-green-600 text-white px-3 py-1 rounded"
+              >
+                Submit
               </button>
 
             </div>
