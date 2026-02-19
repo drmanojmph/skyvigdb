@@ -14,6 +14,17 @@ const API =
   process.env.REACT_APP_API_URL ||
   "https://skyvigdb-backend.onrender.com/api";
 
+/* ================= IME TERMS ================= */
+/* Paste all IME PT terms here from your file */
+
+const IME_TERMS = [
+  "Anaphylaxis",
+  "Stevens-Johnson syndrome",
+  "Toxic epidermal necrolysis",
+  "Agranulocytosis",
+  "Seizure"
+];
+
 /* ================= USERS ================= */
 
 const USERS = [
@@ -23,7 +34,7 @@ const USERS = [
   { username: "quality1", password: "train123", role: "Quality", step: 4 }
 ];
 
-/* ================= MEDDRA ================= */
+/* ================= MEDDRA SIM ================= */
 
 const MEDDRA = [
   { pt: "Headache", soc: "Nervous system disorders" },
@@ -115,16 +126,33 @@ export default function App() {
     );
   }
 
-  /* ================= DASHBOARD ================= */
+  /* ================= DUPLICATE DETECTION ================= */
 
-  const chartData = STAGES.map(s => ({
-    name: s.name,
-    value: cases.filter(c => c.currentStep === s.step).length
-  }));
+  const detectDuplicate = () => {
 
-  /* ================= CREATE CASE ================= */
+    const triage = form.triage || {};
+    const drug = form.products?.[0]?.name || "";
+    const event = form.events?.[0]?.term || "";
+
+    const dup = cases.find(c =>
+      c.triage?.patientInitials === triage.patientInitials &&
+      c.products?.[0]?.name === drug &&
+      c.events?.[0]?.term === event
+    );
+
+    if (dup) {
+      alert("Possible duplicate: " + dup.caseNumber);
+      return true;
+    }
+
+    return false;
+  };
+
+  /* ================= CREATE ================= */
 
   const createCase = async () => {
+
+    if (detectDuplicate()) return;
 
     try {
 
@@ -135,15 +163,6 @@ export default function App() {
         products: form.products || [],
         events: form.events || []
       };
-
-      if (!payload.triage?.patientInitials ||
-          !payload.triage?.reporter ||
-          !payload.products?.length ||
-          !payload.events?.length) {
-
-        alert("Minimum criteria missing");
-        return;
-      }
 
       await axios.post(API + "/cases", payload);
 
@@ -161,7 +180,7 @@ export default function App() {
 
   };
 
-  /* ================= UPDATE CASE ================= */
+  /* ================= UPDATE ================= */
 
   const updateCase = async () => {
 
@@ -185,6 +204,41 @@ export default function App() {
 
   };
 
+  /* ================= SERIOUS AUTO ================= */
+
+  const autoSerious = (term, seriousnessObj) => {
+
+    const imeMatch = IME_TERMS.some(
+      t => t.toLowerCase() === term?.toLowerCase()
+    );
+
+    const checklistSerious =
+      seriousnessObj &&
+      Object.values(seriousnessObj).some(v => v === true);
+
+    return imeMatch || checklistSerious;
+  };
+
+  /* ================= WHO UMC ================= */
+
+  const runWHOUMC = () => {
+
+    const m = form.medical || {};
+    let result = "Unassessable";
+
+    if (!m.temporal) result = "Unlikely";
+    if (m.temporal && !m.alternative) result = "Possible";
+    if (m.temporal && m.dechallenge && !m.alternative)
+      result = "Probable";
+    if (m.rechallenge) result = "Certain";
+
+    setForm({
+      ...form,
+      medical: { ...m, causality: result }
+    });
+
+  };
+
   /* ================= NARRATIVE ================= */
 
   const generateNarrative = () => {
@@ -201,27 +255,7 @@ export default function App() {
 
   };
 
-  /* ================= WHO UMC ================= */
-
-  const runCausality = () => {
-
-    const m = form.medical || {};
-
-    let result = "Possible";
-
-    if (m.temporal && m.dechallenge && !m.alternative)
-      result = "Probable";
-
-    if (m.rechallenge) result = "Certain";
-
-    setForm({
-      ...form,
-      medical: { ...m, causality: result }
-    });
-
-  };
-
-  /* ================= CIOMS EXPORT ================= */
+  /* ================= CIOMS ================= */
 
   const exportCIOMS = () => {
 
@@ -235,6 +269,13 @@ export default function App() {
 
   };
 
+  /* ================= DASHBOARD ================= */
+
+  const chartData = STAGES.map(s => ({
+    name: s.name,
+    value: cases.filter(c => c.currentStep === s.step).length
+  }));
+
   /* ================= TRIAGE ================= */
 
   const triageUI = user.step === 1 && (
@@ -247,102 +288,104 @@ export default function App() {
 
       <div className="grid grid-cols-2 gap-2">
 
-        <label className="text-sm">
-          Initial Receipt Date
-          <input
-            type="date"
-            className="border p-2 w-full"
-            onChange={e =>
-              setForm({
-                ...form,
-                triage: {
-                  ...form.triage,
-                  receiptDate: e.target.value
-                }
-              })
-            }
-          />
-        </label>
-
-        <label className="text-sm">
-          Country
-          <input
-            className="border p-2 w-full"
-            onChange={e =>
-              setForm({
-                ...form,
-                triage: {
-                  ...form.triage,
-                  country: e.target.value
-                }
-              })
-            }
-          />
-        </label>
-
-        <label className="text-sm">
-          Patient Initials
-          <input
-            className="border p-2 w-full"
-            onChange={e =>
-              setForm({
-                ...form,
-                triage: {
-                  ...form.triage,
-                  patientInitials: e.target.value
-                }
-              })
-            }
-          />
-        </label>
-
-        <label className="text-sm">
-          Reporter Name
-          <input
-            className="border p-2 w-full"
-            onChange={e =>
-              setForm({
-                ...form,
-                triage: {
-                  ...form.triage,
-                  reporter: e.target.value
-                }
-              })
-            }
-          />
-        </label>
-
-        <label className="text-sm col-span-2">
-          Suspect Drug
-          <input
-            className="border p-2 w-full"
-            onChange={e =>
-              setForm({
-                ...form,
-                products: [{
-                  name: e.target.value
-                }]
-              })
-            }
-          />
-        </label>
-
-      </div>
-
-      <label className="text-sm block mt-2">
-        Event Description
-        <textarea
-          className="border p-2 w-full"
+        <input
+          type="date"
+          className="border p-2"
           onChange={e =>
             setForm({
               ...form,
-              events: [{
-                term: e.target.value
-              }]
+              triage:{
+                ...form.triage,
+                receiptDate:e.target.value
+              }
             })
           }
         />
-      </label>
+
+        <input
+          placeholder="Country"
+          className="border p-2"
+          onChange={e =>
+            setForm({
+              ...form,
+              triage:{
+                ...form.triage,
+                country:e.target.value
+              }
+            })
+          }
+        />
+
+        <input
+          placeholder="Patient Initials"
+          className="border p-2"
+          onChange={e =>
+            setForm({
+              ...form,
+              triage:{
+                ...form.triage,
+                patientInitials:e.target.value
+              }
+            })
+          }
+        />
+
+        <input
+          placeholder="Reporter Name"
+          className="border p-2"
+          onChange={e =>
+            setForm({
+              ...form,
+              triage:{
+                ...form.triage,
+                reporter:e.target.value
+              }
+            })
+          }
+        />
+
+        <select
+          className="border p-2"
+          onChange={e =>
+            setForm({
+              ...form,
+              triage:{
+                ...form.triage,
+                qualification:e.target.value
+              }
+            })
+          }
+        >
+          <option>Reporter Qualification</option>
+          <option>Physician</option>
+          <option>Pharmacist</option>
+          <option>Nurse</option>
+          <option>Consumer</option>
+        </select>
+
+        <input
+          placeholder="Suspect Drug"
+          className="border p-2"
+          onChange={e =>
+            setForm({
+              ...form,
+              products:[{ name:e.target.value }]
+            })
+          }
+        />
+
+      </div>
+
+      <textarea
+        placeholder="Event Description"
+        className="border p-2 w-full mt-2"
+        onChange={e =>
+          setForm({
+            ...form,
+            events:[{ term:e.target.value }]
+          })
+        }
+      />
 
       <button
         onClick={createCase}
@@ -355,7 +398,7 @@ export default function App() {
 
   );
 
-  /* ================= UI ================= */
+  /* ================= MAIN ================= */
 
   return (
     <div className="min-h-screen bg-gray-100 p-4">
@@ -364,8 +407,6 @@ export default function App() {
         <div className="font-semibold">{user.role}</div>
         <button onClick={() => setUser(null)}>Logout</button>
       </div>
-
-      {/* DASHBOARD */}
 
       <div style={{ width: 400, height: 200 }}>
         <ResponsiveContainer>
@@ -436,277 +477,19 @@ export default function App() {
 
             </div>
 
-            {/* TABS */}
+            <button
+              onClick={exportCIOMS}
+              className="bg-indigo-600 text-white px-3 py-1 rounded"
+            >
+              CIOMS
+            </button>
 
-            <div className="flex gap-2 flex-wrap mb-3">
-
-              {[
-                "general",
-                "patient",
-                "products",
-                "events",
-                "medical",
-                "narrative",
-                "quality",
-                "attachments"
-              ].map(t => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`px-3 py-1 rounded ${
-                    tab === t
-                      ? "bg-indigo-600 text-white"
-                      : "bg-gray-200"
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
-
-            </div>
-
-            {/* EVENTS */}
-
-            {tab === "events" && (
-
-              <div>
-
-                <input
-                  placeholder="Event Term"
-                  className="border p-2 w-full"
-                  onChange={e => {
-
-                    const term = e.target.value;
-
-                    setForm({
-                      ...form,
-                      events: [{ term }]
-                    });
-
-                    searchMeddra(term);
-
-                  }}
-                />
-
-                {meddraResults.map((m, i) => (
-                  <div key={i} className="text-sm">
-                    {m.pt} — {m.soc}
-                  </div>
-                ))}
-
-                <div className="grid grid-cols-2 gap-2 mt-2">
-
-                  {[
-                    "Death",
-                    "Life Threatening",
-                    "Hospitalization",
-                    "Disability",
-                    "Congenital",
-                    "Medically Important"
-                  ].map(s => (
-                    <label key={s}>
-                      <input type="checkbox" /> {s}
-                    </label>
-                  ))}
-
-                </div>
-
-              </div>
-
-            )}
-
-            {/* PRODUCTS */}
-
-            {tab === "products" && (
-
-              <div>
-
-                <button
-                  onClick={() =>
-                    setForm({
-                      ...form,
-                      products:[...(form.products||[]),{}]
-                    })
-                  }
-                  className="bg-blue-600 text-white px-2 py-1 rounded"
-                >
-                  Add Drug
-                </button>
-
-                {(form.products||[]).map((p,i)=>(
-
-                  <div key={i} className="grid grid-cols-4 gap-2 mt-2">
-
-                    <input
-                      placeholder="Drug"
-                      className="border p-1"
-                      onChange={e=>{
-                        const arr=[...form.products];
-                        arr[i].name=e.target.value;
-                        setForm({...form,products:arr});
-                      }}
-                    />
-
-                    <input
-                      placeholder="Dose"
-                      className="border p-1"
-                      onChange={e=>{
-                        const arr=[...form.products];
-                        arr[i].dose=e.target.value;
-                        setForm({...form,products:arr});
-                      }}
-                    />
-
-                    <input
-                      placeholder="Route"
-                      className="border p-1"
-                    />
-
-                    <input
-                      type="date"
-                      className="border p-1"
-                    />
-
-                  </div>
-
-                ))}
-
-              </div>
-
-            )}
-
-            {/* MEDICAL */}
-
-            {tab === "medical" && (
-
-              <div className="space-y-2">
-
-                <label>
-                  <input type="checkbox"
-                    onChange={e =>
-                      setForm({
-                        ...form,
-                        medical:{
-                          ...form.medical,
-                          temporal:e.target.checked
-                        }
-                      })
-                    }
-                  /> Temporal
-                </label>
-
-                <label>
-                  <input type="checkbox"
-                    onChange={e =>
-                      setForm({
-                        ...form,
-                        medical:{
-                          ...form.medical,
-                          dechallenge:e.target.checked
-                        }
-                      })
-                    }
-                  /> Dechallenge
-                </label>
-
-                <button
-                  onClick={runCausality}
-                  className="bg-purple-600 text-white px-3 py-1 rounded"
-                >
-                  WHO-UMC
-                </button>
-
-                <div>
-                  Result: {form.medical?.causality}
-                </div>
-
-              </div>
-
-            )}
-
-            {/* NARRATIVE */}
-
-            {tab === "narrative" && (
-
-              <div>
-
-                <button
-                  onClick={generateNarrative}
-                  className="bg-purple-600 text-white px-3 py-1 rounded"
-                >
-                  Generate
-                </button>
-
-                <textarea
-                  className="border w-full mt-2"
-                  value={form.narrative || ""}
-                  onChange={e =>
-                    setForm({ ...form, narrative: e.target.value })
-                  }
-                />
-
-              </div>
-
-            )}
-
-            {/* ATTACHMENTS */}
-
-            {tab === "attachments" && (
-
-              <div>
-
-                <input
-                  type="file"
-                  onChange={e =>
-                    setForm({
-                      ...form,
-                      attachments:[
-                        ...(form.attachments||[]),
-                        e.target.files[0].name
-                      ]
-                    })
-                  }
-                />
-
-                {(form.attachments||[]).map((f,i)=>(
-                  <div key={i}>{f}</div>
-                ))}
-
-              </div>
-
-            )}
-
-            {/* TIMELINE */}
-
-            <div className="mt-4 text-sm">
-
-              <div>Created → Triage</div>
-              {selected.currentStep >= 2 && <div>Data Entry Complete</div>}
-              {selected.currentStep >= 3 && <div>Medical Review</div>}
-              {selected.currentStep >= 4 && <div>Quality Review</div>}
-              {selected.currentStep >= 5 && <div>Approved</div>}
-
-            </div>
-
-            {/* ACTIONS */}
-
-            <div className="flex justify-between mt-4">
-
-              <button
-                onClick={exportCIOMS}
-                className="bg-indigo-600 text-white px-3 py-1 rounded"
-              >
-                CIOMS
-              </button>
-
-              <button
-                onClick={updateCase}
-                className="bg-green-600 text-white px-3 py-1 rounded"
-              >
-                Submit
-              </button>
-
-            </div>
+            <button
+              onClick={updateCase}
+              className="bg-green-600 text-white px-3 py-1 rounded ml-2"
+            >
+              Submit
+            </button>
 
           </div>
 
