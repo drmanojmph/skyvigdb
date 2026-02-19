@@ -1,13 +1,10 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_cors import CORS
-from sqlalchemy import text
 from datetime import datetime
 import os
 
 app = Flask(__name__)
-
-# ================= DATABASE =================
 
 db_url = os.getenv("DATABASE_URL", "sqlite:///local.db")
 
@@ -21,78 +18,54 @@ db = SQLAlchemy(app)
 
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
+
 # ================= MODEL =================
 
 class Case(db.Model):
-
-    __tablename__ = "cases"
 
     id = db.Column(db.String, primary_key=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     current_step = db.Column(db.Integer, default=1)
-    status = db.Column(db.String(50), default="New")
+    status = db.Column(db.String(50), default="Triage")
 
     triage = db.Column(db.JSON)
-    data_entry = db.Column(db.JSON)
+    general = db.Column(db.JSON)
+    patient = db.Column(db.JSON)
+    products = db.Column(db.JSON)
+    events = db.Column(db.JSON)
     medical = db.Column(db.JSON)
     quality = db.Column(db.JSON)
-
     narrative = db.Column(db.Text)
 
     def to_dict(self):
+
         return {
             "id": self.id,
             "caseNumber": self.id,
             "currentStep": self.current_step,
             "status": self.status,
             "triage": self.triage or {},
-            "dataEntry": self.data_entry or {},
+            "general": self.general or {},
+            "patient": self.patient or {},
+            "products": self.products or [],
+            "events": self.events or [],
             "medical": self.medical or {},
             "quality": self.quality or {},
-            "narrative": self.narrative
+            "narrative": self.narrative or ""
         }
 
-# ================= AUTO REPAIR =================
 
-def repair_database():
-
-    with app.app_context():
-
-        try:
-            # test query
-            db.session.execute(text("SELECT triage FROM cases LIMIT 1"))
-
-        except Exception:
-
-            print("⚠️ Database schema mismatch detected. Repairing...")
-
-            try:
-                db.session.execute(text('DROP TABLE IF EXISTS "case"'))
-                db.session.execute(text('DROP TABLE IF EXISTS cases'))
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
-
-            db.create_all()
-            print("✅ Database repaired")
+with app.app_context():
+    db.create_all()
 
 
-repair_database()
-
-# ================= HEALTH =================
+# ================= ROUTES =================
 
 @app.route("/api/health")
 def health():
+    return jsonify({"status": "ok"})
 
-    try:
-        db.session.execute(text("SELECT 1"))
-        return jsonify({"status": "ok", "database": "connected"})
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-# ================= CASE ROUTES =================
 
 @app.route("/api/cases", methods=["GET"])
 def get_cases():
@@ -109,8 +82,12 @@ def create_case():
     case = Case(
         id="PV-" + str(int(datetime.utcnow().timestamp())),
         current_step=2,
-        status="Triage Complete",
-        triage=data
+        status="Data Entry",
+        triage=data.get("triage"),
+        general=data.get("general"),
+        patient=data.get("patient"),
+        products=data.get("products"),
+        events=data.get("events")
     )
 
     db.session.add(case)
@@ -128,24 +105,31 @@ def update_case(case_id):
     step = case.current_step
 
     if step == 2:
-        case.data_entry = data
+        case.general = data.get("general")
+        case.patient = data.get("patient")
+        case.products = data.get("products")
+        case.events = data.get("events")
+
         case.current_step = 3
-        case.status = "Data Entry Complete"
+        case.status = "Medical"
 
     elif step == 3:
-        case.medical = data
+        case.medical = data.get("medical")
+        case.narrative = data.get("narrative")
+
         case.current_step = 4
-        case.status = "Medical Review Complete"
+        case.status = "Quality"
 
     elif step == 4:
-        case.quality = data
 
-        if data.get("finalStatus") == "approved":
+        case.quality = data.get("quality")
+
+        if data.get("quality", {}).get("finalStatus") == "approved":
             case.current_step = 5
             case.status = "Approved"
         else:
             case.current_step = 3
-            case.status = "Returned to Medical"
+            case.status = "Returned"
 
     db.session.commit()
 
