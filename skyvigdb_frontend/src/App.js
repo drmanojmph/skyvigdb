@@ -43,7 +43,7 @@ export default function App() {
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({});
   const [tab, setTab] = useState("general");
-  const [login, setLogin] = useState({});
+  const [login, setLogin] = useState({ username: "", password: "" });
   const [meddraResults, setMeddraResults] = useState([]);
 
   useEffect(() => {
@@ -51,19 +51,27 @@ export default function App() {
   }, [user]);
 
   const fetchCases = async () => {
-    const res = await axios.get(API + "/cases");
-    setCases(res.data);
+    try {
+      const res = await axios.get(API + "/cases");
+      setCases(res.data || []);
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  // LOGIN
+  // ================= LOGIN =================
 
   const doLogin = () => {
+
     const found = USERS.find(
-      u =>
+      (u) =>
         u.username === login.username &&
         u.password === login.password
     );
-    if (found) setUser(found);
+
+    if (found) {
+      setUser(found);
+    }
   };
 
   if (!user) {
@@ -77,7 +85,7 @@ export default function App() {
           <input
             placeholder="Username"
             className="border p-2 w-full mb-2"
-            onChange={e =>
+            onChange={(e) =>
               setLogin({ ...login, username: e.target.value })
             }
           />
@@ -86,7 +94,7 @@ export default function App() {
             type="password"
             placeholder="Password"
             className="border p-2 w-full mb-2"
-            onChange={e =>
+            onChange={(e) =>
               setLogin({ ...login, password: e.target.value })
             }
           />
@@ -103,79 +111,88 @@ export default function App() {
     );
   }
 
-  // DASHBOARD DATA
+  // ================= DASHBOARD =================
 
-  const chartData = STAGES.map(s => ({
+  const chartData = STAGES.map((s) => ({
     name: s.name,
-    value: cases.filter(c => c.currentStep === s.step).length
+    value: cases.filter((c) => c.currentStep === s.step).length
   }));
 
-  // CREATE CASE (TRIAGE ONLY)
+  // ================= TRIAGE CREATE =================
 
   const createCase = async () => {
 
-    const payload = {
-      receiptDate: form.receiptDate,
-      general: form.general,
-      patient: form.patient,
-      products: form.products,
-      events: form.events
-    };
+    try {
 
-    await axios.post(API + "/cases", payload);
+      const payload = {
+        receiptDate: form.receiptDate || "",
+        triage: form
+      };
 
-    setForm({});
-    fetchCases();
+      await axios.post(API + "/cases", payload);
+
+      setForm({});
+      fetchCases();
+
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  // UPDATE CASE
+  // ================= UPDATE =================
 
   const updateCase = async () => {
 
-    await axios.put(API + "/cases/" + selected.id, form);
+    if (!selected) return;
 
-    setSelected(null);
-    setForm({});
-    fetchCases();
+    try {
+
+      await axios.put(API + "/cases/" + selected.id, form);
+
+      setSelected(null);
+      setForm({});
+      fetchCases();
+
+    } catch (err) {
+      console.error(err);
+    }
   };
 
-  // MEDDRA SEARCH
+  // ================= MEDDRA SEARCH =================
 
   const searchMeddra = (q) => {
-    const res = MEDDRA.filter(m =>
+
+    const res = MEDDRA.filter((m) =>
       m.pt.toLowerCase().includes(q.toLowerCase())
     );
+
     setMeddraResults(res);
   };
 
-  // NARRATIVE GENERATOR
+  // ================= NARRATIVE =================
 
   const generateNarrative = () => {
 
-    const text = `
-Patient ${form.patient?.age || ""} year old 
-experienced ${form.events?.[0]?.term || ""}
-after receiving ${form.products?.[0]?.name || ""}.
-`;
+    const text =
+      "Patient experienced adverse event after suspect drug.";
 
     setForm({ ...form, narrative: text });
   };
 
-  // CIOMS EXPORT
+  // ================= CIOMS EXPORT =================
 
   const exportCIOMS = () => {
 
     const doc = new jsPDF();
 
     doc.text("CIOMS I Report", 10, 10);
-    doc.text("Case: " + selected.caseNumber, 10, 20);
-    doc.text("Narrative:", 10, 30);
-    doc.text(form.narrative || "", 10, 40);
+    doc.text("Case: " + (selected?.caseNumber || ""), 10, 20);
+    doc.text(form.narrative || "", 10, 30);
 
     doc.save("CIOMS.pdf");
   };
 
-  // MAIN UI
+  // ================= MAIN UI =================
 
   return (
     <div className="p-4">
@@ -208,7 +225,7 @@ after receiving ${form.products?.[0]?.name || ""}.
           <input
             type="date"
             className="border p-2 mr-2"
-            onChange={e =>
+            onChange={(e) =>
               setForm({ ...form, receiptDate: e.target.value })
             }
           />
@@ -223,19 +240,19 @@ after receiving ${form.products?.[0]?.name || ""}.
         </div>
       )}
 
-      {/* WORKFLOW BOARD */}
+      {/* WORKFLOW */}
 
       <div className="grid grid-cols-5 gap-4">
 
-        {STAGES.map(stage => (
+        {STAGES.map((stage) => (
 
           <div key={stage.step} className="bg-gray-200 p-2">
 
             <h4>{stage.name}</h4>
 
             {cases
-              .filter(c => c.currentStep === stage.step)
-              .map(c => (
+              .filter((c) => c.currentStep === stage.step)
+              .map((c) => (
 
                 <div
                   key={c.id}
@@ -256,7 +273,7 @@ after receiving ${form.products?.[0]?.name || ""}.
 
       </div>
 
-      {/* CASE MODAL */}
+      {/* MODAL */}
 
       {selected && (
 
@@ -266,11 +283,9 @@ after receiving ${form.products?.[0]?.name || ""}.
 
             <h3>{selected.caseNumber}</h3>
 
-            {/* TABS */}
-
             <div className="flex gap-2 mb-2">
 
-              {["general","patient","products","events","medical","narrative","quality"].map(t => (
+              {["events", "narrative"].map((t) => (
                 <button
                   key={t}
                   onClick={() => setTab(t)}
@@ -282,25 +297,20 @@ after receiving ${form.products?.[0]?.name || ""}.
 
             </div>
 
-            {/* EVENTS TAB WITH MEDDRA */}
-
             {tab === "events" && (
               <div>
 
                 <input
                   placeholder="Event term"
                   className="border p-2"
-                  onChange={e => {
+                  onChange={(e) => {
                     const term = e.target.value;
-                    setForm({
-                      ...form,
-                      events: [{ term }]
-                    });
+                    setForm({ ...form, event: term });
                     searchMeddra(term);
                   }}
                 />
 
-                {meddraResults.map((m,i)=>(
+                {meddraResults.map((m, i) => (
                   <div key={i}>
                     {m.pt} — {m.soc}
                   </div>
@@ -308,8 +318,6 @@ after receiving ${form.products?.[0]?.name || ""}.
 
               </div>
             )}
-
-            {/* NARRATIVE */}
 
             {tab === "narrative" && (
               <div>
@@ -324,7 +332,7 @@ after receiving ${form.products?.[0]?.name || ""}.
                 <textarea
                   className="border w-full mt-2"
                   value={form.narrative || ""}
-                  onChange={e =>
+                  onChange={(e) =>
                     setForm({ ...form, narrative: e.target.value })
                   }
                 />
@@ -332,9 +340,30 @@ after receiving ${form.products?.[0]?.name || ""}.
               </div>
             )}
 
-            {/* QUALITY */}
+            <div className="flex justify-between mt-3">
 
-            {tab === "quality" && user.step === 4 && (
-              <select
-                onChange={e =>
-                  setForm({ ...form, finalStatus: e.target.
+              <button
+                onClick={exportCIOMS}
+                className="bg-purple-600 text-white px-2"
+              >
+                CIOMS
+              </button>
+
+              <button
+                onClick={updateCase}
+                className="bg-green-600 text-white px-2"
+              >
+                Submit
+              </button>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      )}
+
+    </div>
+  );
+}
