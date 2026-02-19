@@ -56,12 +56,29 @@ class Case(db.Model):
         }
 
 
-# ================= INIT =================
+# ================= SAFE INIT =================
 
-with app.app_context():
+def init_db():
 
-    # IMPORTANT: ensures schema always matches model
-    db.create_all()
+    with app.app_context():
+
+        try:
+            # Try simple query
+            Case.query.first()
+
+        except Exception:
+
+            # Schema mismatch → reset table
+            print("Resetting database schema")
+
+            db.drop_all()
+            db.create_all()
+
+        else:
+            db.create_all()
+
+
+init_db()
 
 
 # ================= ROUTES =================
