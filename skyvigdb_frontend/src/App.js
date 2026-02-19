@@ -42,8 +42,6 @@ const STAGES = [
   { name: "Approved", step: 5 }
 ];
 
-/* ================= APP ================= */
-
 export default function App() {
 
   const [user, setUser] = useState(null);
@@ -66,6 +64,7 @@ export default function App() {
   /* ================= LOGIN ================= */
 
   const doLogin = () => {
+
     const found = USERS.find(
       u =>
         u.username === login.username &&
@@ -74,6 +73,7 @@ export default function App() {
 
     if (found) setUser(found);
     else alert("Invalid credentials");
+
   };
 
   if (!user) {
@@ -122,25 +122,46 @@ export default function App() {
     value: cases.filter(c => c.currentStep === s.step).length
   }));
 
-  /* ================= TRIAGE CREATE ================= */
+  /* ================= CREATE CASE ================= */
 
   const createCase = async () => {
 
-    const payload = {
-      triage: form.triage || {},
-      general: form.general || {},
-      patient: form.patient || {},
-      products: form.products || [],
-      events: form.events || []
-    };
+    try {
 
-    await axios.post(API + "/cases", payload);
+      const payload = {
+        triage: form.triage || {},
+        general: form.general || {},
+        patient: form.patient || {},
+        products: form.products || [],
+        events: form.events || []
+      };
 
-    setForm({});
-    fetchCases();
+      if (!payload.triage?.patientInitials ||
+          !payload.triage?.reporter ||
+          !payload.products?.length ||
+          !payload.events?.length) {
+
+        alert("Minimum criteria missing");
+        return;
+      }
+
+      await axios.post(API + "/cases", payload);
+
+      setForm({});
+      fetchCases();
+
+      alert("Case created");
+
+    } catch (err) {
+
+      console.error(err);
+      alert("Create failed");
+
+    }
+
   };
 
-  /* ================= UPDATE ================= */
+  /* ================= UPDATE CASE ================= */
 
   const updateCase = async () => {
 
@@ -149,9 +170,10 @@ export default function App() {
     setSelected(null);
     setForm({});
     fetchCases();
+
   };
 
-  /* ================= MEDDRA SEARCH ================= */
+  /* ================= MEDDRA ================= */
 
   const searchMeddra = (q) => {
 
@@ -160,6 +182,7 @@ export default function App() {
     );
 
     setMeddraResults(res);
+
   };
 
   /* ================= NARRATIVE ================= */
@@ -175,6 +198,7 @@ export default function App() {
     }. The patient developed ${e.term || ""}.`;
 
     setForm({ ...form, narrative: text });
+
   };
 
   /* ================= WHO UMC ================= */
@@ -194,6 +218,7 @@ export default function App() {
       ...form,
       medical: { ...m, causality: result }
     });
+
   };
 
   /* ================= CIOMS EXPORT ================= */
@@ -207,14 +232,133 @@ export default function App() {
     doc.text(form.narrative || "", 10, 30);
 
     doc.save("CIOMS.pdf");
+
   };
 
-  const queue = cases.filter(c => c.currentStep === user.step);
+  /* ================= TRIAGE ================= */
+
+  const triageUI = user.step === 1 && (
+
+    <div className="bg-blue-50 p-4 rounded mb-4">
+
+      <h3 className="font-semibold mb-3">
+        New Case Intake
+      </h3>
+
+      <div className="grid grid-cols-2 gap-2">
+
+        <label className="text-sm">
+          Initial Receipt Date
+          <input
+            type="date"
+            className="border p-2 w-full"
+            onChange={e =>
+              setForm({
+                ...form,
+                triage: {
+                  ...form.triage,
+                  receiptDate: e.target.value
+                }
+              })
+            }
+          />
+        </label>
+
+        <label className="text-sm">
+          Country
+          <input
+            className="border p-2 w-full"
+            onChange={e =>
+              setForm({
+                ...form,
+                triage: {
+                  ...form.triage,
+                  country: e.target.value
+                }
+              })
+            }
+          />
+        </label>
+
+        <label className="text-sm">
+          Patient Initials
+          <input
+            className="border p-2 w-full"
+            onChange={e =>
+              setForm({
+                ...form,
+                triage: {
+                  ...form.triage,
+                  patientInitials: e.target.value
+                }
+              })
+            }
+          />
+        </label>
+
+        <label className="text-sm">
+          Reporter Name
+          <input
+            className="border p-2 w-full"
+            onChange={e =>
+              setForm({
+                ...form,
+                triage: {
+                  ...form.triage,
+                  reporter: e.target.value
+                }
+              })
+            }
+          />
+        </label>
+
+        <label className="text-sm col-span-2">
+          Suspect Drug
+          <input
+            className="border p-2 w-full"
+            onChange={e =>
+              setForm({
+                ...form,
+                products: [{
+                  name: e.target.value
+                }]
+              })
+            }
+          />
+        </label>
+
+      </div>
+
+      <label className="text-sm block mt-2">
+        Event Description
+        <textarea
+          className="border p-2 w-full"
+          onChange={e =>
+            setForm({
+              ...form,
+              events: [{
+                term: e.target.value
+              }]
+            })
+          }
+        />
+      </label>
+
+      <button
+        onClick={createCase}
+        className="bg-blue-600 text-white px-4 py-2 rounded mt-3"
+      >
+        Create Case
+      </button>
+
+    </div>
+
+  );
+
+  /* ================= UI ================= */
 
   return (
     <div className="min-h-screen bg-gray-100 p-4">
-
-      {/* HEADER */}
 
       <div className="flex justify-between mb-4">
         <div className="font-semibold">{user.role}</div>
@@ -234,91 +378,7 @@ export default function App() {
         </ResponsiveContainer>
       </div>
 
-      {/* TRIAGE SCREEN */}
-
-      {user.step === 1 && (
-
-        <div className="bg-blue-50 p-4 rounded mb-4">
-
-          <h3 className="font-semibold mb-2">New Case Intake</h3>
-
-          <div className="grid grid-cols-2 gap-2">
-
-            <input
-              placeholder="Patient Initials"
-              className="border p-2"
-              onChange={e =>
-                setForm({
-                  ...form,
-                  triage: {
-                    ...form.triage,
-                    patientInitials: e.target.value
-                  }
-                })
-              }
-            />
-
-            <input
-              placeholder="Country"
-              className="border p-2"
-              onChange={e =>
-                setForm({
-                  ...form,
-                  triage: {
-                    ...form.triage,
-                    country: e.target.value
-                  }
-                })
-              }
-            />
-
-            <input
-              placeholder="Reporter Name"
-              className="border p-2"
-              onChange={e =>
-                setForm({
-                  ...form,
-                  triage: {
-                    ...form.triage,
-                    reporter: e.target.value
-                  }
-                })
-              }
-            />
-
-            <input
-              placeholder="Drug Name"
-              className="border p-2"
-              onChange={e =>
-                setForm({
-                  ...form,
-                  products: [{ name: e.target.value }]
-                })
-              }
-            />
-
-          </div>
-
-          <textarea
-            placeholder="Event Description"
-            className="border p-2 w-full mt-2"
-            onChange={e =>
-              setForm({
-                ...form,
-                events: [{ term: e.target.value }]
-              })
-            }
-          />
-
-          <button
-            onClick={createCase}
-            className="bg-blue-600 text-white px-3 py-1 rounded mt-2"
-          >
-            Create Case
-          </button>
-
-        </div>
-      )}
+      {triageUI}
 
       {/* BOARD */}
 
@@ -405,7 +465,7 @@ export default function App() {
 
             </div>
 
-            {/* EVENTS + SERIOUSNESS */}
+            {/* EVENTS */}
 
             {tab === "events" && (
 
@@ -444,13 +504,9 @@ export default function App() {
                     "Congenital",
                     "Medically Important"
                   ].map(s => (
-
                     <label key={s}>
-
                       <input type="checkbox" /> {s}
-
                     </label>
-
                   ))}
 
                 </div>
