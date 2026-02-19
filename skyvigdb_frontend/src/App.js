@@ -125,12 +125,12 @@ export default function App() {
   };
 
   if (!user) return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-900 to-indigo-900">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-900 to-indigo-900">
       <div className="bg-white p-8 rounded-2xl shadow-2xl w-80">
         <div className="text-center mb-6">
           <div className="text-4xl mb-2">🛡️</div>
           <h2 className="text-xl font-bold text-gray-800">SkyVigilance</h2>
-          <p className="text-xs text-gray-400 mt-1">PV Training Platform · Argus-based</p>
+          <p className="text-xs text-gray-400 mt-1">Safety Database Platform</p>
         </div>
         <input placeholder="Username" className="border border-gray-300 rounded px-3 py-2 w-full mb-2 text-sm"
           value={login.username} onChange={e => setLogin({...login, username:e.target.value})}
@@ -141,17 +141,9 @@ export default function App() {
         <button onClick={doLogin} className="bg-indigo-700 hover:bg-indigo-800 text-white w-full py-2 rounded-lg font-semibold transition">
           Login
         </button>
-        <div className="mt-5 bg-gray-50 rounded-lg p-3 text-xs text-gray-500">
-          <div className="font-semibold mb-1">Training Credentials</div>
-          {USERS.map(u => (
-            <div key={u.username} className="flex justify-between py-0.5">
-              <span className="font-mono">{u.username}</span>
-              <span className="text-gray-400">{u.role}</span>
-            </div>
-          ))}
-          <div className="mt-1 text-gray-400">All passwords: <span className="font-mono">train123</span></div>
-        </div>
       </div>
+      {/* Login page footer */}
+      <p className="mt-6 text-xs text-blue-200 opacity-75">A VigiServe Foundation Initiative</p>
     </div>
   );
 
@@ -217,6 +209,25 @@ export default function App() {
     } catch { flash("❌ Update failed.", "error"); }
   };
 
+  /* ---- RETURN TO DATA ENTRY (from Medical Review) ---- */
+  const returnCaseToDataEntry = async () => {
+    if (!isMyCase(selected)) {
+      alert("⛔ You can only route cases assigned to your role step.");
+      return;
+    }
+    if (!window.confirm("Return this case to Data Entry for further information?")) return;
+    try {
+      await axios.put(API + "/cases/" + selected.id, {
+        ...form,
+        medical: { ...(form.medical || {}), routeBackToDataEntry: true }
+      });
+      setSelected(null);
+      setForm({});
+      fetchCases();
+      flash("↩️ Case returned to Data Entry.");
+    } catch { flash("❌ Routing failed.", "error"); }
+  };
+
   /* ---- MEDDRA ---- */
   const searchMeddra = (q) => {
     setMeddraQuery(q);
@@ -273,25 +284,28 @@ export default function App() {
 
   /* ---- NARRATIVE AUTO-GENERATE ---- */
   const generateNarrative = () => {
-    const p = form.patient || {};
-    const d = (form.products || [{}])[0];
-    const e = (form.events   || [{}])[0];
-    const g = form.general   || {};
-    const t = form.triage    || {};
-    const med = form.medical || {};
-    const serious = autoSerious() ? "serious ("+
-      Object.entries(g.seriousness || {}).filter(([,v])=>v).map(([k])=>k).join(", ")+")" : "non-serious";
+    const caseId = selected?.caseNumber || selected?.id || "[Case ID]";
+    const p   = form.patient  || {};
+    const d   = (form.products || [{}])[0];
+    const e   = (form.events   || [{}])[0];
+    const g   = form.general   || {};
+    const t   = form.triage    || {};
+    const med = form.medical   || {};
+    const serious = autoSerious() ? "serious (" +
+      Object.entries(g.seriousness || {}).filter(([,v]) => v).map(([k]) => k).join(", ") + ")" : "non-serious";
     const text =
-      `A ${p.age||"[age]"}-year-old ${p.sex||"[sex]"} patient${p.weight?" ("+p.weight+" kg)":""} with a medical history of ${p.medHistory||"no relevant past history"} ` +
+      `Case ID: ${caseId}. ` +
+      `A ${p.age||"[age]"}-year-old ${p.sex||"[sex]"} patient${p.weight ? " (" + p.weight + " kg)" : ""} ` +
+      `with a medical history of ${p.medHistory||"no relevant past history"} ` +
       `was receiving ${d?.name||"[drug]"} (${d?.dose||"dose not reported"}, ${d?.route||"route not reported"}) ` +
       `for ${d?.indication||"[indication]"}. ` +
-      `On ${e?.onsetDate||"[onset date]"}, the patient developed ${e?.pt||e?.term||"[event]"} (MedDRA PT). ` +
+      `On ${e?.onsetDate||"[onset date]"}, the patient developed ${e?.pt||e?.term||"[event]"}. ` +
       `The event was considered ${serious}. ` +
-      (med.causality ? `Causality was assessed as ${med.causality} per WHO-UMC criteria. ` : "") +
-      (med.listedness ? `The event is ${med.listedness} per the reference safety information. ` : "") +
+      (med.causality   ? `Causality was assessed as ${med.causality} per WHO-UMC criteria. ` : "") +
+      (med.listedness  ? `The event is ${med.listedness} per the reference safety information. ` : "") +
       `The case was reported by a ${t.qualification||"reporter"} from ${t.country||"[country]"}. ` +
       (e?.outcome ? `Outcome: ${e.outcome}.` : "Outcome: Unknown.");
-    setForm(f => ({ ...f, narrative:text }));
+    setForm(f => ({ ...f, narrative: text }));
   };
 
   /* ---- CIOMS I PDF ---- */
@@ -657,7 +671,7 @@ export default function App() {
           return (
             <div>
               <SectionHead>Lab Data – Tests & Results</SectionHead>
-              <p className="text-xs text-gray-400 mb-3">Enter relevant laboratory test results. Maximum 1500 entries in Argus Safety.</p>
+              <p className="text-xs text-gray-400 mb-3">Enter relevant laboratory test results for this case.</p>
               {labs.map((l, i) => (
                 <div key={i} className="border border-gray-200 rounded-xl p-4 mb-3 bg-gray-50">
                   <div className="text-xs font-bold text-gray-500 uppercase mb-2">Lab Test {i+1}</div>
@@ -861,6 +875,29 @@ export default function App() {
               ))}
               <button onClick={() => setForm(f => ({ ...f, events:[...(f.events||[{}]),{}] }))}
                 className="text-indigo-600 text-sm font-semibold hover:underline">+ Add Event</button>
+
+              {/* ── Auto-Narrative ── */}
+              <div className="mt-6 border-t border-gray-200 pt-5">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="text-xs font-bold text-teal-700 uppercase tracking-widest">
+                    Case Narrative
+                  </div>
+                  <button onClick={generateNarrative}
+                    className="text-xs bg-teal-100 hover:bg-teal-200 text-teal-800 px-3 py-1 rounded-lg font-semibold transition flex items-center gap-1">
+                    ⚡ Auto-generate Narrative
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mb-2">
+                  Auto-generate populates the narrative from the data entered above. You can edit it freely after generation. Case ID is automatically included.
+                </p>
+                <textarea
+                  className="border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-300 w-full resize-none"
+                  rows={6}
+                  placeholder="Enter or auto-generate the full case narrative. The Case ID will be included automatically..."
+                  value={form.narrative || ""}
+                  onChange={e => setForm(f => ({ ...f, narrative: e.target.value }))}
+                />
+              </div>
             </div>
           );
         })()}
@@ -993,18 +1030,27 @@ export default function App() {
               onChange:e => setNested("medical","abbreviatedNarrative",e.target.value) }))}
         </div>
 
-        {/* Full Narrative */}
+        {/* Full Case Narrative — editable, narrative authored in Data Entry */}
         <div>
-          <div className="flex justify-between items-center mb-2">
-            <SectionHead color="purple">Full Case Narrative</SectionHead>
-            <button onClick={generateNarrative}
-              className="text-xs bg-purple-100 hover:bg-purple-200 text-purple-700 px-3 py-1 rounded-lg font-semibold transition">
-              ⚡ Auto-generate Narrative
-            </button>
-          </div>
-          {F("Narrative", TA({ rows:6, placeholder:"Enter or auto-generate the full case narrative...",
+          <SectionHead color="purple">Full Case Narrative</SectionHead>
+          <p className="text-xs text-gray-400 mb-2">
+            Narrative is authored in the Data Entry step. You may refine it here after clinical review.
+          </p>
+          {F("Narrative", TA({ rows:6, placeholder:"Case narrative appears here. Edit as needed after clinical review...",
               value:form.narrative||"", onChange:e => setForm(f => ({ ...f, narrative:e.target.value })) }))}
           {F("Company Comment", TA({ rows:2, value:m.companyComment||"", onChange:e => setNested("medical","companyComment",e.target.value) }))}
+        </div>
+
+        {/* Route Back to Data Entry */}
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-2">Routing</div>
+          <p className="text-xs text-gray-500 mb-3">
+            If additional information is needed from the data entry team, return the case below. Otherwise use the <strong>Submit →</strong> button above to advance to Quality Review.
+          </p>
+          <button onClick={returnCaseToDataEntry}
+            className="bg-amber-500 hover:bg-amber-600 text-white text-xs px-5 py-2 rounded-lg font-semibold transition flex items-center gap-2">
+            ↩️ Return Case to Data Entry
+          </button>
         </div>
       </div>
     );
@@ -1149,23 +1195,22 @@ export default function App() {
      MAIN RENDER
   ==================================================== */
   return (
-    <div className="min-h-screen bg-gray-100 font-sans">
+    <div className="min-h-screen bg-sky-50 font-sans flex flex-col">
 
       {/* Topbar */}
-      <div className="bg-white border-b border-gray-200 px-6 py-3 flex justify-between items-center shadow-sm sticky top-0 z-30">
+      <div className="bg-blue-900 border-b border-blue-800 px-6 py-3 flex justify-between items-center shadow-sm sticky top-0 z-30">
         <div className="flex items-center gap-3">
           <span className="text-xl">🛡️</span>
-          <span className="font-bold text-gray-800">SkyVigilance Training</span>
-          <span className="text-xs text-gray-400 hidden sm:block">Argus Safety Workflow Simulation</span>
+          <span className="font-bold text-white">SkyVigilance SafetyDB Workflow</span>
         </div>
         <div className="flex items-center gap-4">
           <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold
-            ${user.step===1?"bg-blue-100 text-blue-700":user.step===2?"bg-teal-100 text-teal-700":
-              user.step===3?"bg-purple-100 text-purple-700":"bg-orange-100 text-orange-700"}`}>
+            ${user.step===1?"bg-blue-200 text-blue-900":user.step===2?"bg-teal-200 text-teal-900":
+              user.step===3?"bg-purple-200 text-purple-900":"bg-orange-200 text-orange-900"}`}>
             {user.role}
           </span>
-          <span className="text-xs text-gray-400">{user.username}</span>
-          <button onClick={() => setUser(null)} className="text-xs text-gray-400 hover:text-red-500 transition">Logout</button>
+          <span className="text-xs text-blue-200">{user.username}</span>
+          <button onClick={() => setUser(null)} className="text-xs text-blue-300 hover:text-red-300 transition">Logout</button>
         </div>
       </div>
 
@@ -1177,10 +1222,10 @@ export default function App() {
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-6 py-6">
+      <div className="max-w-7xl mx-auto px-6 py-6 flex-1 w-full">
 
         {/* Dashboard */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-6">
+        <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-5 mb-6">
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Workflow Dashboard</h3>
             <button onClick={fetchCases} className="text-xs text-indigo-500 hover:underline">↻ Refresh</button>
@@ -1207,13 +1252,13 @@ export default function App() {
             return (
               <div key={stage.step}
                 className={`rounded-xl p-4 border min-h-32
-                  ${stage.step===user.step ? "bg-indigo-50 border-indigo-200" : "bg-white border-gray-200"}`}>
+                  ${stage.step===user.step ? "bg-indigo-100 border-indigo-300" : "bg-white border-blue-100"}`}>
                 <div className="flex justify-between items-center mb-3">
                   <h4 className={`font-semibold text-xs uppercase tracking-wide
                     ${stage.step===user.step ? "text-indigo-700" : "text-gray-500"}`}>
                     {stage.name}
                   </h4>
-                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-medium">
+                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
                     {stageCases.length}
                   </span>
                 </div>
@@ -1226,7 +1271,7 @@ export default function App() {
                     className={`p-2 rounded-lg mb-2 cursor-pointer border text-xs font-mono transition
                       ${isMyCase(c)
                         ? "bg-indigo-100 border-indigo-300 hover:bg-indigo-200 text-indigo-800"
-                        : "bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-500"}`}>
+                        : "bg-sky-50 border-blue-100 hover:bg-sky-100 text-slate-500"}`}>
                     <div className="font-semibold">{c.caseNumber}</div>
                     <div className="text-xs mt-0.5 truncate">
                       {c.triage?.country || "—"} · {(c.products||[])[0]?.name||"—"}
@@ -1242,6 +1287,11 @@ export default function App() {
           })}
         </div>
       </div>
+
+      {/* Global Footer */}
+      <footer className="bg-blue-900 border-t border-blue-800 py-3 text-center">
+        <p className="text-xs text-blue-300">A VigiServe Foundation Initiative</p>
+      </footer>
 
       {/* MODAL */}
       {selected && (
