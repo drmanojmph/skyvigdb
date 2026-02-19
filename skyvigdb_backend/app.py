@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.orm.attributes import flag_modified
 from flask_cors import CORS
 from datetime import datetime
 import os
@@ -218,23 +219,31 @@ def update_case(case_id):
 
         # ---- Step 3: Medical Review → Quality Review OR back to Data Entry ----
         elif step == 3:
-            case.medical   = data.get("medical",   case.medical or {})
-            case.narrative = data.get("narrative", case.narrative or "")
+            # Read incoming medical dict into a local variable first.
+            # Do NOT re-read case.medical after assignment — SQLAlchemy JSON columns
+            # may return the old cached value within the same session, causing the
+            # routeBackToDataEntry flag to be missed.
+            incoming_medical = data.get("medical", case.medical or {})
+            incoming_narrative = data.get("narrative", case.narrative or "")
+            incoming_events    = data.get("events")
 
-            if data.get("events"):
-                case.events = data.get("events")
+            # Check the routing flag BEFORE writing to case.medical
+            route_back = bool(incoming_medical.get("routeBackToDataEntry", False))
 
-            # Medical reviewer may route the case back to Data Entry for more info
-            route_back = bool((case.medical or {}).get("routeBackToDataEntry", False))
             if route_back:
-                # Remove the flag so it doesn't persist for the next submission
-                cleaned = {k: v for k, v in case.medical.items() if k != "routeBackToDataEntry"}
-                case.medical = cleaned
+                # Strip the flag so it doesn't persist for future submissions
+                case.medical = {k: v for k, v in incoming_medical.items()
+                                if k != "routeBackToDataEntry"}
                 case.current_step = 2
                 case.status       = "Returned to Data Entry"
             else:
+                case.medical      = incoming_medical
                 case.current_step = 4
                 case.status       = "Quality Review"
+
+            case.narrative = incoming_narrative
+            if incoming_events:
+                case.events = incoming_events
 
         # ---- Step 4: Quality Review → Approved or Returned ----
         elif step == 4:
@@ -263,6 +272,9 @@ def update_case(case_id):
             return jsonify({"error": f"Unexpected case step: {step}"}), 400
 
         case.updated_at = datetime.utcnow()
+        # Explicitly flag JSON columns as modified so SQLAlchemy detects all changes
+        for col in ("triage", "general", "patient", "products", "events", "medical", "quality"):
+            flag_modified(case, col)
         db.session.commit()
 
         return jsonify(case.to_dict())
@@ -297,6 +309,8 @@ def patch_case(case_id):
         if "narrative" in data: case.narrative = data["narrative"]
 
         case.updated_at = datetime.utcnow()
+        for col in ("triage", "general", "patient", "products", "events", "medical", "quality"):
+            flag_modified(case, col)
         db.session.commit()
         return jsonify(case.to_dict())
 
