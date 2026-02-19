@@ -1,5 +1,14 @@
 import React, { useState, useEffect } from "react";
 import axios from "axios";
+import jsPDF from "jspdf";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer
+} from "recharts";
 
 const API =
   process.env.REACT_APP_API_URL ||
@@ -8,7 +17,7 @@ const API =
 const USERS = [
   { username: "triage1", password: "train123", role: "Triage", step: 1 },
   { username: "dataentry1", password: "train123", role: "Data Entry", step: 2 },
-  { username: "medical1", password: "train123", role: "Medical Review", step: 3 },
+  { username: "medical1", password: "train123", role: "Medical", step: 3 },
   { username: "quality1", password: "train123", role: "Quality", step: 4 }
 ];
 
@@ -20,14 +29,22 @@ const STAGES = [
   { name: "Approved", step: 5 }
 ];
 
+const MEDDRA = [
+  { pt: "Headache", soc: "Nervous system disorders" },
+  { pt: "Nausea", soc: "Gastrointestinal disorders" },
+  { pt: "Rash", soc: "Skin disorders" },
+  { pt: "Fever", soc: "General disorders" }
+];
+
 export default function App() {
 
   const [user, setUser] = useState(null);
   const [cases, setCases] = useState([]);
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({});
-  const [login, setLogin] = useState({ username: "", password: "" });
-  const [error, setError] = useState("");
+  const [tab, setTab] = useState("general");
+  const [login, setLogin] = useState({});
+  const [meddraResults, setMeddraResults] = useState([]);
 
   useEffect(() => {
     if (user) fetchCases();
@@ -38,37 +55,24 @@ export default function App() {
     setCases(res.data);
   };
 
-  // ================= LOGIN =================
+  // LOGIN
 
   const doLogin = () => {
-
     const found = USERS.find(
       u =>
         u.username === login.username &&
         u.password === login.password
     );
-
-    if (!found) {
-      setError("Invalid credentials");
-      return;
-    }
-
-    setUser(found);
+    if (found) setUser(found);
   };
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-blue-200 to-purple-200">
+      <div className="min-h-screen flex items-center justify-center">
 
-        <div className="bg-white p-8 rounded-xl shadow w-96">
+        <div className="bg-white p-6 rounded shadow w-80">
 
-          <h2 className="text-xl font-bold mb-4 text-center">
-            SkyVigilance Login
-          </h2>
-
-          {error && (
-            <div className="text-red-500 mb-2">{error}</div>
-          )}
+          <h2 className="font-bold mb-3">Login</h2>
 
           <input
             placeholder="Username"
@@ -81,7 +85,7 @@ export default function App() {
           <input
             type="password"
             placeholder="Password"
-            className="border p-2 w-full mb-3"
+            className="border p-2 w-full mb-2"
             onChange={e =>
               setLogin({ ...login, password: e.target.value })
             }
@@ -89,31 +93,42 @@ export default function App() {
 
           <button
             onClick={doLogin}
-            className="bg-blue-600 text-white w-full p-2 rounded"
+            className="bg-blue-600 text-white w-full p-2"
           >
             Login
           </button>
-
-          <div className="text-xs mt-4 text-gray-500">
-            Training accounts: triage1 / dataentry1 / medical1 / quality1
-          </div>
 
         </div>
       </div>
     );
   }
 
-  // ================= CREATE CASE =================
+  // DASHBOARD DATA
+
+  const chartData = STAGES.map(s => ({
+    name: s.name,
+    value: cases.filter(c => c.currentStep === s.step).length
+  }));
+
+  // CREATE CASE (TRIAGE ONLY)
 
   const createCase = async () => {
 
-    await axios.post(API + "/cases", form);
+    const payload = {
+      receiptDate: form.receiptDate,
+      general: form.general,
+      patient: form.patient,
+      products: form.products,
+      events: form.events
+    };
+
+    await axios.post(API + "/cases", payload);
 
     setForm({});
     fetchCases();
   };
 
-  // ================= UPDATE CASE =================
+  // UPDATE CASE
 
   const updateCase = async () => {
 
@@ -124,52 +139,83 @@ export default function App() {
     fetchCases();
   };
 
-  const queue = cases.filter(c => c.currentStep === user.step);
+  // MEDDRA SEARCH
 
-  // ================= MAIN UI =================
+  const searchMeddra = (q) => {
+    const res = MEDDRA.filter(m =>
+      m.pt.toLowerCase().includes(q.toLowerCase())
+    );
+    setMeddraResults(res);
+  };
+
+  // NARRATIVE GENERATOR
+
+  const generateNarrative = () => {
+
+    const text = `
+Patient ${form.patient?.age || ""} year old 
+experienced ${form.events?.[0]?.term || ""}
+after receiving ${form.products?.[0]?.name || ""}.
+`;
+
+    setForm({ ...form, narrative: text });
+  };
+
+  // CIOMS EXPORT
+
+  const exportCIOMS = () => {
+
+    const doc = new jsPDF();
+
+    doc.text("CIOMS I Report", 10, 10);
+    doc.text("Case: " + selected.caseNumber, 10, 20);
+    doc.text("Narrative:", 10, 30);
+    doc.text(form.narrative || "", 10, 40);
+
+    doc.save("CIOMS.pdf");
+  };
+
+  // MAIN UI
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="p-4">
 
-      <div className="bg-white p-4 shadow flex justify-between">
-
+      <div className="flex justify-between mb-4">
         <div>{user.role}</div>
+        <button onClick={() => setUser(null)}>Logout</button>
+      </div>
 
-        <button
-          onClick={() => setUser(null)}
-          className="text-red-500"
-        >
-          Logout
-        </button>
+      {/* DASHBOARD */}
 
+      <div style={{ width: 400, height: 200 }}>
+        <ResponsiveContainer>
+          <BarChart data={chartData}>
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Bar dataKey="value" />
+          </BarChart>
+        </ResponsiveContainer>
       </div>
 
       {/* TRIAGE FORM */}
 
       {user.step === 1 && (
-        <div className="p-4">
+        <div className="border p-3 mb-4">
 
-          <h3 className="font-semibold mb-2">New Case</h3>
-
-          <input
-            placeholder="Reporter Name"
-            className="border p-2 mr-2"
-            onChange={e =>
-              setForm({ ...form, reporterName: e.target.value })
-            }
-          />
+          <h3>New Case</h3>
 
           <input
-            placeholder="Product"
+            type="date"
             className="border p-2 mr-2"
             onChange={e =>
-              setForm({ ...form, productName: e.target.value })
+              setForm({ ...form, receiptDate: e.target.value })
             }
           />
 
           <button
             onClick={createCase}
-            className="bg-green-600 text-white px-3 py-1 rounded"
+            className="bg-green-600 text-white px-3"
           >
             Create
           </button>
@@ -179,15 +225,13 @@ export default function App() {
 
       {/* WORKFLOW BOARD */}
 
-      <div className="grid grid-cols-5 gap-4 p-6">
+      <div className="grid grid-cols-5 gap-4">
 
         {STAGES.map(stage => (
 
-          <div key={stage.step} className="bg-gray-200 p-3 rounded">
+          <div key={stage.step} className="bg-gray-200 p-2">
 
-            <h3 className="font-semibold mb-2">
-              {stage.name}
-            </h3>
+            <h4>{stage.name}</h4>
 
             {cases
               .filter(c => c.currentStep === stage.step)
@@ -195,20 +239,13 @@ export default function App() {
 
                 <div
                   key={c.id}
-                  className="bg-white p-3 rounded shadow mb-2 cursor-pointer"
+                  className="bg-white p-2 m-1 cursor-pointer"
                   onClick={() => {
                     setSelected(c);
                     setForm({});
                   }}
                 >
-                  <div className="font-semibold">
-                    {c.caseNumber}
-                  </div>
-
-                  <div className="text-sm text-gray-500">
-                    {c.status}
-                  </div>
-
+                  {c.caseNumber}
                 </div>
 
               ))}
@@ -219,80 +256,85 @@ export default function App() {
 
       </div>
 
-      {/* CASE EDIT MODAL */}
+      {/* CASE MODAL */}
 
       {selected && (
 
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center">
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex justify-center items-center">
 
-          <div className="bg-white p-6 rounded w-96">
+          <div className="bg-white p-4 w-96">
 
-            <h3 className="font-semibold mb-4">
-              Case {selected.caseNumber}
-            </h3>
+            <h3>{selected.caseNumber}</h3>
 
-            {/* DATA ENTRY */}
+            {/* TABS */}
 
-            {user.step === 2 && (
-              <input
-                placeholder="Patient Age"
-                className="border p-2 w-full mb-2"
-                onChange={e =>
-                  setForm({ patientAge: e.target.value })
-                }
-              />
+            <div className="flex gap-2 mb-2">
+
+              {["general","patient","products","events","medical","narrative","quality"].map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className="border px-2"
+                >
+                  {t}
+                </button>
+              ))}
+
+            </div>
+
+            {/* EVENTS TAB WITH MEDDRA */}
+
+            {tab === "events" && (
+              <div>
+
+                <input
+                  placeholder="Event term"
+                  className="border p-2"
+                  onChange={e => {
+                    const term = e.target.value;
+                    setForm({
+                      ...form,
+                      events: [{ term }]
+                    });
+                    searchMeddra(term);
+                  }}
+                />
+
+                {meddraResults.map((m,i)=>(
+                  <div key={i}>
+                    {m.pt} — {m.soc}
+                  </div>
+                ))}
+
+              </div>
             )}
 
-            {/* MEDICAL */}
+            {/* NARRATIVE */}
 
-            {user.step === 3 && (
-              <input
-                placeholder="Causality"
-                className="border p-2 w-full mb-2"
-                onChange={e =>
-                  setForm({ causality: e.target.value })
-                }
-              />
+            {tab === "narrative" && (
+              <div>
+
+                <button
+                  onClick={generateNarrative}
+                  className="bg-blue-600 text-white px-2"
+                >
+                  Generate
+                </button>
+
+                <textarea
+                  className="border w-full mt-2"
+                  value={form.narrative || ""}
+                  onChange={e =>
+                    setForm({ ...form, narrative: e.target.value })
+                  }
+                />
+
+              </div>
             )}
 
             {/* QUALITY */}
 
-            {user.step === 4 && (
+            {tab === "quality" && user.step === 4 && (
               <select
-                className="border p-2 w-full mb-2"
                 onChange={e =>
-                  setForm({ finalStatus: e.target.value })
-                }
-              >
-                <option value="approved">Approve</option>
-                <option value="reject">Return</option>
-              </select>
-            )}
-
-            <div className="flex justify-end gap-2">
-
-              <button
-                onClick={() => setSelected(null)}
-                className="bg-gray-300 px-3 py-1 rounded"
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={updateCase}
-                className="bg-green-600 text-white px-3 py-1 rounded"
-              >
-                Submit
-              </button>
-
-            </div>
-
-          </div>
-
-        </div>
-
-      )}
-
-    </div>
-  );
-}
+                  setForm({ ...form, finalStatus: e.target.
