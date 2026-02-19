@@ -42,7 +42,6 @@ export default function App() {
   const [cases, setCases] = useState([]);
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({});
-  const [tab, setTab] = useState("general");
   const [login, setLogin] = useState({ username: "", password: "" });
   const [meddraResults, setMeddraResults] = useState([]);
 
@@ -71,6 +70,8 @@ export default function App() {
 
     if (found) {
       setUser(found);
+    } else {
+      alert("Invalid credentials");
     }
   };
 
@@ -118,7 +119,7 @@ export default function App() {
     value: cases.filter((c) => c.currentStep === s.step).length
   }));
 
-  // ================= TRIAGE CREATE =================
+  // ================= CREATE CASE =================
 
   const createCase = async () => {
 
@@ -158,7 +159,7 @@ export default function App() {
     }
   };
 
-  // ================= MEDDRA SEARCH =================
+  // ================= MEDDRA =================
 
   const searchMeddra = (q) => {
 
@@ -179,7 +180,7 @@ export default function App() {
     setForm({ ...form, narrative: text });
   };
 
-  // ================= CIOMS EXPORT =================
+  // ================= CIOMS =================
 
   const exportCIOMS = () => {
 
@@ -215,7 +216,7 @@ export default function App() {
         </ResponsiveContainer>
       </div>
 
-      {/* TRIAGE FORM */}
+      {/* TRIAGE */}
 
       {user.step === 1 && (
         <div className="border p-3 mb-4">
@@ -283,64 +284,38 @@ export default function App() {
 
             <h3>{selected.caseNumber}</h3>
 
-            <div className="flex gap-2 mb-2">
+            <input
+              placeholder="Event"
+              className="border p-2 w-full mb-2"
+              onChange={(e) => {
+                const term = e.target.value;
+                setForm({ ...form, event: term });
+                searchMeddra(term);
+              }}
+            />
 
-              {["events", "narrative"].map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className="border px-2"
-                >
-                  {t}
-                </button>
-              ))}
-
-            </div>
-
-            {tab === "events" && (
-              <div>
-
-                <input
-                  placeholder="Event term"
-                  className="border p-2"
-                  onChange={(e) => {
-                    const term = e.target.value;
-                    setForm({ ...form, event: term });
-                    searchMeddra(term);
-                  }}
-                />
-
-                {meddraResults.map((m, i) => (
-                  <div key={i}>
-                    {m.pt} — {m.soc}
-                  </div>
-                ))}
-
+            {meddraResults.map((m, i) => (
+              <div key={i}>
+                {m.pt} — {m.soc}
               </div>
-            )}
+            ))}
 
-            {tab === "narrative" && (
-              <div>
-
-                <button
-                  onClick={generateNarrative}
-                  className="bg-blue-600 text-white px-2"
-                >
-                  Generate
-                </button>
-
-                <textarea
-                  className="border w-full mt-2"
-                  value={form.narrative || ""}
-                  onChange={(e) =>
-                    setForm({ ...form, narrative: e.target.value })
-                  }
-                />
-
-              </div>
-            )}
+            <textarea
+              className="border w-full mt-2"
+              value={form.narrative || ""}
+              onChange={(e) =>
+                setForm({ ...form, narrative: e.target.value })
+              }
+            />
 
             <div className="flex justify-between mt-3">
+
+              <button
+                onClick={generateNarrative}
+                className="bg-blue-600 text-white px-2"
+              >
+                Generate
+              </button>
 
               <button
                 onClick={exportCIOMS}
