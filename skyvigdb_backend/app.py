@@ -205,38 +205,36 @@ def update_case(case_id):
 
         # ---- Step 2: Data Entry → Medical Review ----
         if step == 2:
-            """
-            Saves all data-entry fields:
-              general (source type, report type, classification, seriousness, reporter sub-object)
-              patient (demographics, history as otherHistory[], lab data as labData[])
-              products (drug list with full dosage, QC, challenge info)
-              events (verbatim + onset + seriousness per event)
-            """
             case.general   = data.get("general",  case.general  or {})
             case.patient   = data.get("patient",  case.patient  or {})
             case.products  = data.get("products", case.products or [])
             case.events    = data.get("events",   case.events   or [])
+            # Narrative authored in Data Entry — persist so Medical reviewer can read it
+            if data.get("narrative") is not None:
+                case.narrative = data.get("narrative")
 
             case.current_step = 3
             case.status       = "Medical Review"
 
-        # ---- Step 3: Medical Review → Quality Review ----
+        # ---- Step 3: Medical Review → Quality Review OR back to Data Entry ----
         elif step == 3:
-            """
-            Saves medical review output:
-              medical (MedDRA coding result, causality algorithms, listedness, case analysis)
-              events updated with MedDRA PT/LLT/SOC from coding
-              narrative (full case narrative)
-            """
             case.medical   = data.get("medical",   case.medical or {})
             case.narrative = data.get("narrative", case.narrative or "")
 
-            # Events may have been updated with MedDRA hierarchy during medical review
             if data.get("events"):
                 case.events = data.get("events")
 
-            case.current_step = 4
-            case.status       = "Quality Review"
+            # Medical reviewer may route the case back to Data Entry for more info
+            route_back = bool((case.medical or {}).get("routeBackToDataEntry", False))
+            if route_back:
+                # Remove the flag so it doesn't persist for the next submission
+                cleaned = {k: v for k, v in case.medical.items() if k != "routeBackToDataEntry"}
+                case.medical = cleaned
+                case.current_step = 2
+                case.status       = "Returned to Data Entry"
+            else:
+                case.current_step = 4
+                case.status       = "Quality Review"
 
         # ---- Step 4: Quality Review → Approved or Returned ----
         elif step == 4:
@@ -267,6 +265,39 @@ def update_case(case_id):
         case.updated_at = datetime.utcnow()
         db.session.commit()
 
+        return jsonify(case.to_dict())
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+
+# ---------- PATCH /api/cases/<id> — partial save (no step advance) ----------
+@app.route("/api/cases/<case_id>", methods=["PATCH"])
+def patch_case(case_id):
+    """
+    Tab-level partial save.
+    Persists any supplied fields without advancing current_step or changing status.
+    Accepted fields: triage, general, patient, products, events, medical, narrative
+    """
+    try:
+        case = Case.query.get(case_id)
+        if case is None:
+            return jsonify({"error": "Case not found"}), 404
+
+        data = request.json or {}
+
+        if "triage"    in data: case.triage    = data["triage"]
+        if "general"   in data: case.general   = data["general"]
+        if "patient"   in data: case.patient   = data["patient"]
+        if "products"  in data: case.products  = data["products"]
+        if "events"    in data: case.events    = data["events"]
+        if "medical"   in data: case.medical   = data["medical"]
+        if "narrative" in data: case.narrative = data["narrative"]
+
+        case.updated_at = datetime.utcnow()
+        db.session.commit()
         return jsonify(case.to_dict())
 
     except Exception as e:
