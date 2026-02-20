@@ -102,6 +102,8 @@ export default function App() {
   const [meddraQuery, setMeddraQuery] = useState("");
   const [meddraResults, setMeddraResults] = useState([]);
   const [msg, setMsg]                 = useState(null);
+  const [auditLog, setAuditLog]       = useState([]);
+  const [showAudit, setShowAudit]     = useState(false);
 
   useEffect(() => { if (user) fetchCases(); }, [user]);
 
@@ -110,6 +112,13 @@ export default function App() {
       const res = await axios.get(API + "/cases");
       setCases(res.data || []);
     } catch { flash("Could not load cases — check backend connection.", "error"); }
+  };
+
+  const fetchAudit = async (caseId) => {
+    try {
+      const res = await axios.get(API + "/cases/" + caseId + "/audit");
+      setAuditLog(res.data || []);
+    } catch { setAuditLog([]); }
   };
 
   const flash = (text, type="ok") => {
@@ -186,7 +195,8 @@ export default function App() {
         general:  form.general  || {},
         patient:  form.patient  || {},
         products: form.products || [],
-        events:   form.events   || []
+        events:   form.events   || [],
+        _audit:   { performedBy: user.username, role: user.role }
       });
       setForm({});
       fetchCases();
@@ -201,7 +211,7 @@ export default function App() {
       return;
     }
     try {
-      await axios.put(API + "/cases/" + selected.id, form);
+      await axios.put(API + "/cases/" + selected.id, { ...form, _audit: { performedBy: user.username, role: user.role } });
       setSelected(null);
       setForm({});
       fetchCases();
@@ -219,7 +229,8 @@ export default function App() {
     try {
       await axios.put(API + "/cases/" + selected.id, {
         ...form,
-        medical: { ...(form.medical || {}), routeBackToDataEntry: true }
+        medical: { ...(form.medical || {}), routeBackToDataEntry: true },
+        _audit: { performedBy: user.username, role: user.role }
       });
       setSelected(null);
       setForm({});
@@ -232,7 +243,7 @@ export default function App() {
   const saveTab = async (fields, label = "tab") => {
     if (!selected?.id) { flash("No case selected.", "error"); return; }
     try {
-      const res = await axios.patch(API + "/cases/" + selected.id, fields);
+      const res = await axios.patch(API + "/cases/" + selected.id, { ...fields, _audit: { performedBy: user.username, role: user.role } });
       // Merge saved data back into form & selected so state stays in sync
       setForm(f => ({ ...f, ...res.data }));
       setSelected(s => ({ ...s, ...res.data }));
@@ -471,6 +482,129 @@ export default function App() {
       </button>
     </div>
   );
+
+
+  /* ---- RENDER AUDIT TRAIL ---- */
+  const renderAuditTrail = () => {
+    const ACTION_META = {
+      CASE_CREATED:         { label: "Case Created",            color: "bg-blue-100 text-blue-800",   icon: "📥" },
+      TAB_SAVED:            { label: "Tab Saved",               color: "bg-teal-100 text-teal-800",   icon: "💾" },
+      SUBMITTED:            { label: "Submitted",               color: "bg-green-100 text-green-800", icon: "✅" },
+      ROUTE_BACK_TO_DE:     { label: "Returned to Data Entry",  color: "bg-amber-100 text-amber-800", icon: "↩️" },
+      RETURNED_TO_MEDICAL:  { label: "Returned to Medical",     color: "bg-amber-100 text-amber-800", icon: "↩️" },
+      APPROVED:             { label: "Approved",                color: "bg-emerald-100 text-emerald-800", icon: "🏆" },
+    };
+
+    const STEP_NAMES = { 1:"Triage", 2:"Data Entry", 3:"Medical Review", 4:"Quality Review", 5:"Approved" };
+
+    const fmtTime = (iso) => {
+      const d = new Date(iso);
+      return d.toLocaleDateString("en-GB", { day:"2-digit", month:"short", year:"numeric" }) +
+             " " + d.toLocaleTimeString("en-GB", { hour:"2-digit", minute:"2-digit" });
+    };
+
+    return (
+      <div>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-bold text-gray-800 text-sm">GxP Audit Trail</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Complete chronological record of all actions on this case — mirrors enterprise PV system audit logs.
+            </p>
+          </div>
+          <button onClick={() => fetchAudit(selected.id)}
+            className="text-xs text-indigo-500 hover:underline">↻ Refresh</button>
+        </div>
+
+        {/* Training note */}
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-4 text-xs text-amber-800">
+          <span className="font-bold">📚 Training Note: </span>
+          In real pharmacovigilance systems (Oracle Argus Safety, Veeva Vault), every field-level change is
+          recorded in an audit trail that is permanently tamper-proof and required by regulations including
+          21 CFR Part 11, EU Annex 11, and ICH E6(R2) GCP. This trail below shows workflow-level actions.
+        </div>
+
+        {/* Timeline */}
+        {auditLog.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">
+            <div className="text-3xl mb-2">📋</div>
+            <div className="text-sm">No audit entries yet for this case.</div>
+            <div className="text-xs mt-1">Actions will appear here as the case moves through the workflow.</div>
+          </div>
+        ) : (
+          <div className="relative">
+            {/* Vertical line */}
+            <div className="absolute left-5 top-0 bottom-0 w-px bg-gray-200" />
+            <div className="space-y-4">
+              {auditLog.map((entry, i) => {
+                const meta = ACTION_META[entry.actionType] || { label: entry.actionType, color: "bg-gray-100 text-gray-700", icon: "⚙️" };
+                return (
+                  <div key={entry.id || i} className="flex gap-4 relative">
+                    {/* Timeline dot */}
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0 z-10 border-2 border-white shadow-sm ${meta.color}`}>
+                      {meta.icon}
+                    </div>
+                    {/* Content card */}
+                    <div className="flex-1 bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${meta.color}`}>
+                            {meta.label}
+                          </span>
+                          {entry.stepFrom !== null && entry.stepTo !== null && entry.stepFrom !== entry.stepTo && (
+                            <span className="text-xs text-gray-500">
+                              {STEP_NAMES[entry.stepFrom] || "Step "+entry.stepFrom}
+                              {" → "}
+                              {STEP_NAMES[entry.stepTo] || "Step "+entry.stepTo}
+                            </span>
+                          )}
+                          {entry.section && entry.actionType === "TAB_SAVED" && (
+                            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
+                              {entry.section}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-gray-400 whitespace-nowrap flex-shrink-0">
+                          {fmtTime(entry.timestamp)}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-700 leading-relaxed mb-2">{entry.details}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-gray-600">👤 {entry.performedBy}</span>
+                        <span className="text-xs text-gray-400">·</span>
+                        <span className="text-xs text-gray-500">{entry.role}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Summary table */}
+        {auditLog.length > 0 && (
+          <div className="mt-6">
+            <div className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Summary</div>
+            <div className="grid grid-cols-4 gap-3">
+              {[
+                { label: "Total Events",    value: auditLog.length,                                                             color: "bg-blue-50 text-blue-800" },
+                { label: "Tab Saves",        value: auditLog.filter(e => e.actionType==="TAB_SAVED").length,                     color: "bg-teal-50 text-teal-800" },
+                { label: "Submissions",      value: auditLog.filter(e => e.actionType==="SUBMITTED").length,                     color: "bg-green-50 text-green-800" },
+                { label: "Returns / Rework", value: auditLog.filter(e => ["ROUTE_BACK_TO_DE","RETURNED_TO_MEDICAL"].includes(e.actionType)).length, color: "bg-amber-50 text-amber-800" },
+              ].map(({ label, value, color }) => (
+                <div key={label} className={`rounded-lg p-3 text-center ${color}`}>
+                  <div className="text-lg font-bold">{value}</div>
+                  <div className="text-xs">{label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   /* ---- STEP 2: DATA ENTRY (Tabbed) ---- */
   const DataEntryForm = () => {
@@ -1364,8 +1498,9 @@ export default function App() {
                 {stageCases.map(c => (
                   <div key={c.id}
                     onClick={() => {
-                      setSelected(c); setForm(c);
+                      setSelected(c); setForm(c); setShowAudit(false);
                       setTab("general"); setMeddraQuery(""); setMeddraResults([]);
+                      fetchAudit(c.id);
                     }}
                     className={`p-2 rounded-lg mb-2 cursor-pointer border text-xs font-mono transition
                       ${isMyCase(c)
@@ -1411,20 +1546,25 @@ export default function App() {
                   className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition">
                   📄 CIOMS I
                 </button>
-                {isMyCase(selected) && selected.currentStep < 5 && (
+                <button onClick={() => { setShowAudit(a => !a); }}
+                  className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition
+                    ${showAudit ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-amber-100 hover:bg-amber-200 text-amber-800"}`}>
+                  📋 Audit Trail {auditLog.length > 0 ? `(${auditLog.length})` : ""}
+                </button>
+                {isMyCase(selected) && selected.currentStep < 5 && !showAudit && (
                   <button onClick={updateCase}
                     className="bg-green-600 hover:bg-green-700 text-white text-xs px-4 py-1.5 rounded-lg font-semibold transition">
                     Submit →
                   </button>
                 )}
-                <button onClick={() => { setSelected(null); setMeddraQuery(""); setMeddraResults([]); }}
+                <button onClick={() => { setSelected(null); setShowAudit(false); setAuditLog([]); setMeddraQuery(""); setMeddraResults([]); }}
                   className="text-gray-400 hover:text-red-500 text-2xl leading-none transition ml-1">✕</button>
               </div>
             </div>
 
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto flex-1">
-              {renderModalForm()}
+              {showAudit ? renderAuditTrail() : renderModalForm()}
             </div>
 
           </div>
