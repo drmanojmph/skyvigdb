@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: safetydb-backend
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    plan: free
+    envVars:
+      - key: TURSO_DATABASE_URL
+        sync: false          # Set this manually in Render dashboard — never commit the token
+      - key: PYTHON_VERSION
+        value: 3.11.0
