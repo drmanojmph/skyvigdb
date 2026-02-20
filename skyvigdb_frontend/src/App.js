@@ -121,6 +121,37 @@ export default function App() {
     } catch { setAuditLog([]); }
   };
 
+  /* ---- E2B(R3) XML EXPORT ---- */
+  const downloadE2B = async () => {
+    if (!selected?.id) return;
+    if (selected.currentStep < 3) {
+      flash("⚠️ E2B R3 XML is available from Medical Review (Step 3) onward.", "error");
+      return;
+    }
+    try {
+      flash("⏳ Generating E2B(R3) XML…");
+      const params = new URLSearchParams({
+        user: user?.username || "unknown",
+        role: user?.role     || "unknown",
+      });
+      const res = await axios.get(
+        `${API}/cases/${selected.id}/e2b?${params.toString()}`,
+        { responseType: "blob" }
+      );
+      const url  = URL.createObjectURL(new Blob([res.data], { type: "application/xml" }));
+      const link = document.createElement("a");
+      link.href     = url;
+      link.download = `E2B_${selected.caseNumber}.xml`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      flash("📨 E2B(R3) XML downloaded — " + selected.caseNumber);
+    } catch {
+      flash("❌ E2B export failed — check backend connection.", "error");
+    }
+  };
+
   const flash = (text, type="ok") => {
     setMsg({ text, type });
     setTimeout(() => setMsg(null), 4000);
@@ -1539,6 +1570,9 @@ export default function App() {
                 <div className="text-xs text-gray-400 mt-0.5">
                   Step {selected.currentStep} · {selected.status}
                   {selected.triage?.country ? " · " + selected.triage.country : ""}
+                  {selected.currentStep >= 3 && (
+                    <span className="ml-2 text-violet-500 font-semibold">· E2B R3 ready</span>
+                  )}
                 </div>
               </div>
               <div className="flex gap-2 flex-wrap justify-end">
@@ -1546,6 +1580,13 @@ export default function App() {
                   className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition">
                   📄 CIOMS I
                 </button>
+                {selected.currentStep >= 3 && (
+                  <button onClick={downloadE2B}
+                    className="bg-violet-600 hover:bg-violet-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition"
+                    title="Generate ICH E2B(R3) ICHICSR XML — HL7 v3 format for EudraVigilance / FDA FAERS submission">
+                    📨 E2B R3
+                  </button>
+                )}
                 <button onClick={() => { setShowAudit(a => !a); }}
                   className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition
                     ${showAudit ? "bg-amber-500 hover:bg-amber-600 text-white" : "bg-amber-100 hover:bg-amber-200 text-amber-800"}`}>
