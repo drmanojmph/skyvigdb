@@ -1,6 +1,15 @@
-Flask==3.0.0
-Flask-SQLAlchemy==3.1.1
-Flask-Cors==4.0.0
-Werkzeug==3.0.1
-gunicorn==21.2.0
+# ── Core web framework ──────────────────────────────────────────────────────
+flask==3.0.3
+flask-sqlalchemy==3.1.1
+flask-cors==4.0.1
+
+# ── Database drivers ─────────────────────────────────────────────────────────
+# Turso / libSQL (hosted SQLite — free forever, persists across Render deploys)
+sqlalchemy-libsql==0.1.1
+
+# PostgreSQL driver — kept so you can fall back to Neon/Supabase if needed
 psycopg2-binary==2.9.9
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+gunicorn==22.0.0
+python-dotenv==1.0.1
