@@ -5,7 +5,7 @@ flask-cors==4.0.1
 
 # ── Database drivers ─────────────────────────────────────────────────────────
 # Turso / libSQL (hosted SQLite — free forever, persists across Render deploys)
-sqlalchemy-libsql==0.1.1
+sqlalchemy-libsql==0.1.0
 
 # PostgreSQL driver — kept so you can fall back to Neon/Supabase if needed
 psycopg2-binary==2.9.9
