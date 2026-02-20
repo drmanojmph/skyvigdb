@@ -78,6 +78,52 @@ class Case(db.Model):
 
 
 # =========================================================
+# AUDIT LOG MODEL
+# =========================================================
+
+class AuditLog(db.Model):
+    """
+    GxP-style audit trail — every meaningful action on a case is recorded here.
+    Mirrors the audit trail functionality of enterprise PV systems like Oracle Argus Safety.
+
+    Each row captures:
+      - who performed the action (username + role)
+      - what action was taken (action_type)
+      - when it happened (timestamp)
+      - which case it affects (case_id)
+      - workflow step transition (step_from → step_to)
+      - a human-readable summary of what changed (details)
+    """
+
+    __tablename__ = "audit_log"
+
+    id           = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    case_id      = db.Column(db.String, db.ForeignKey("case.id", ondelete="CASCADE"), nullable=False, index=True)
+    timestamp    = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    action_type  = db.Column(db.String(60), nullable=False)   # e.g. CASE_CREATED, TAB_SAVED, SUBMITTED
+    performed_by = db.Column(db.String(80), nullable=False)   # username
+    role         = db.Column(db.String(40), nullable=False)   # Triage, Data Entry, Medical, Quality
+    step_from    = db.Column(db.Integer, nullable=True)
+    step_to      = db.Column(db.Integer, nullable=True)
+    section      = db.Column(db.String(60), nullable=True)    # which tab was saved, if applicable
+    details      = db.Column(db.Text,    nullable=True)       # human-readable summary
+
+    def to_dict(self):
+        return {
+            "id":          self.id,
+            "caseId":      self.case_id,
+            "timestamp":   self.timestamp.isoformat() + "Z",
+            "actionType":  self.action_type,
+            "performedBy": self.performed_by,
+            "role":        self.role,
+            "stepFrom":    self.step_from,
+            "stepTo":      self.step_to,
+            "section":     self.section,
+            "details":     self.details,
+        }
+
+
+# =========================================================
 # DB INIT (schema-safe)
 # =========================================================
 
@@ -90,6 +136,7 @@ def init_db():
             db.drop_all()
             db.create_all()
         else:
+            # create_all is safe to call repeatedly — only creates missing tables
             db.create_all()
 
 init_db()
@@ -132,6 +179,46 @@ def _validate_step(data, step):
 
 
 # =========================================================
+# AUDIT HELPER
+# =========================================================
+
+def log_event(case_id, action_type, performed_by, role,
+              step_from=None, step_to=None, section=None, details=None):
+    """
+    Write one audit trail entry.
+    Called from POST, PUT, and PATCH handlers.
+    Never raises — audit failures must not break the main workflow.
+    """
+    try:
+        entry = AuditLog(
+            case_id      = case_id,
+            action_type  = action_type,
+            performed_by = performed_by,
+            role         = role,
+            step_from    = step_from,
+            step_to      = step_to,
+            section      = section,
+            details      = details,
+        )
+        db.session.add(entry)
+        # Note: caller is responsible for committing the session
+    except Exception as e:
+        print(f"[AUDIT] Failed to log event: {e}")
+
+
+def extract_audit(data):
+    """
+    Pull _audit metadata out of the request body and return
+    (performed_by, role, cleaned_data).
+    The _audit key is never saved to the case.
+    """
+    audit = data.pop("_audit", {}) if isinstance(data, dict) else {}
+    performed_by = audit.get("performedBy", "unknown")
+    role         = audit.get("role",        "unknown")
+    return performed_by, role, data
+
+
+# =========================================================
 # ROUTES
 # =========================================================
 
@@ -159,6 +246,7 @@ def get_cases():
 def create_case():
     try:
         data = request.json or {}
+        performed_by, role, data = extract_audit(data)
 
         ok, errors = _validate_step(data, 1)
         if not ok:
@@ -178,8 +266,25 @@ def create_case():
         )
 
         db.session.add(case)
-        db.session.commit()
 
+        # ── Audit: case created ──
+        log_event(
+            case_id      = case_id,
+            action_type  = "CASE_CREATED",
+            performed_by = performed_by,
+            role         = role,
+            step_from    = None,
+            step_to      = 2,
+            section      = "triage",
+            details      = (
+                f"Case booked in by {performed_by} ({role}). "
+                f"Patient: {data.get('triage',{}).get('patientInitials','—')} | "
+                f"Drug: {(data.get('products') or [{}])[0].get('name','—')} | "
+                f"Event: {(data.get('events') or [{}])[0].get('term','—')}"
+            ),
+        )
+
+        db.session.commit()
         return jsonify(case.to_dict()), 201
 
     except Exception as e:
@@ -208,6 +313,7 @@ def update_case(case_id):
             return jsonify({"error": "Case not found"}), 404
 
         data = request.json or {}
+        performed_by, role, data = extract_audit(data)
         step = case.current_step
 
         # ---- Step 2: Data Entry → Medical Review ----
@@ -222,6 +328,20 @@ def update_case(case_id):
 
             case.current_step = 3
             case.status       = "Medical Review"
+
+            log_event(
+                case_id      = case_id,
+                action_type  = "SUBMITTED",
+                performed_by = performed_by,
+                role         = role,
+                step_from    = 2,
+                step_to      = 3,
+                section      = "all_tabs",
+                details      = (
+                    f"{performed_by} ({role}) submitted case from Data Entry to Medical Review. "
+                    f"Narrative: {'present' if data.get('narrative') else 'not yet entered'}."
+                ),
+            )
 
         # ---- Step 3: Medical Review → Quality Review OR back to Data Entry ----
         elif step == 3:
@@ -242,10 +362,40 @@ def update_case(case_id):
                                 if k != "routeBackToDataEntry"}
                 case.current_step = 2
                 case.status       = "Returned to Data Entry"
+
+                log_event(
+                    case_id      = case_id,
+                    action_type  = "ROUTE_BACK_TO_DE",
+                    performed_by = performed_by,
+                    role         = role,
+                    step_from    = 3,
+                    step_to      = 2,
+                    section      = "medical",
+                    details      = (
+                        f"{performed_by} ({role}) returned case to Data Entry for additional information. "
+                        f"Causality at time of return: {incoming_medical.get('causality','not assessed')}."
+                    ),
+                )
             else:
                 case.medical      = incoming_medical
                 case.current_step = 4
                 case.status       = "Quality Review"
+
+                log_event(
+                    case_id      = case_id,
+                    action_type  = "SUBMITTED",
+                    performed_by = performed_by,
+                    role         = role,
+                    step_from    = 3,
+                    step_to      = 4,
+                    section      = "medical",
+                    details      = (
+                        f"{performed_by} ({role}) submitted Medical Review to Quality Review. "
+                        f"Causality: {incoming_medical.get('causality','—')} | "
+                        f"WHO-UMC: {incoming_medical.get('whoUMC','—')} | "
+                        f"Listedness: {incoming_medical.get('listedness','—')}."
+                    ),
+                )
 
             case.narrative = incoming_narrative
             if incoming_events:
@@ -265,10 +415,38 @@ def update_case(case_id):
                 case.current_step = 5
                 case.status       = "Approved"
 
+                log_event(
+                    case_id      = case_id,
+                    action_type  = "APPROVED",
+                    performed_by = performed_by,
+                    role         = role,
+                    step_from    = 4,
+                    step_to      = 5,
+                    section      = "quality",
+                    details      = (
+                        f"{performed_by} ({role}) approved and closed the case. "
+                        f"QC comments: {quality.get('comments','none')}."
+                    ),
+                )
+
             elif final == "returned":
                 # Return to Medical Review for rework
                 case.current_step = 3
                 case.status       = "Returned to Medical"
+
+                log_event(
+                    case_id      = case_id,
+                    action_type  = "RETURNED_TO_MEDICAL",
+                    performed_by = performed_by,
+                    role         = role,
+                    step_from    = 4,
+                    step_to      = 3,
+                    section      = "quality",
+                    details      = (
+                        f"{performed_by} ({role}) returned case to Medical Review for rework. "
+                        f"QC comments: {quality.get('comments','none')}."
+                    ),
+                )
 
         # ---- Step 5: Already closed ----
         elif step == 5:
@@ -305,6 +483,10 @@ def patch_case(case_id):
             return jsonify({"error": "Case not found"}), 404
 
         data = request.json or {}
+        performed_by, role, data = extract_audit(data)
+
+        # Determine which sections are being saved for the audit entry
+        saved_sections = [s for s in ("triage","general","patient","products","events","medical","narrative") if s in data]
 
         if "triage"    in data: case.triage    = data["triage"]
         if "general"   in data: case.general   = data["general"]
@@ -317,6 +499,22 @@ def patch_case(case_id):
         case.updated_at = datetime.utcnow()
         for col in ("triage", "general", "patient", "products", "events", "medical", "quality"):
             flag_modified(case, col)
+
+        # ── Audit: tab saved ──
+        log_event(
+            case_id      = case_id,
+            action_type  = "TAB_SAVED",
+            performed_by = performed_by,
+            role         = role,
+            step_from    = case.current_step,
+            step_to      = case.current_step,
+            section      = ", ".join(saved_sections) if saved_sections else "unknown",
+            details      = (
+                f"{performed_by} ({role}) saved section(s): {', '.join(saved_sections)}. "
+                f"Case remains at step {case.current_step} ({case.status})."
+            ),
+        )
+
         db.session.commit()
         return jsonify(case.to_dict())
 
@@ -349,6 +547,44 @@ def delete_all_cases():
         return jsonify({"deleted": count, "message": f"{count} cases cleared from training database."})
     except Exception as e:
         db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------- GET /api/cases/<id>/audit — full audit trail for one case ----------
+@app.route("/api/cases/<case_id>/audit", methods=["GET"])
+def get_case_audit(case_id):
+    """
+    Returns the complete audit trail for a single case, newest entries first.
+    Used by the frontend Audit Trail panel in the case modal.
+    """
+    try:
+        entries = (
+            AuditLog.query
+            .filter_by(case_id=case_id)
+            .order_by(AuditLog.timestamp.desc())
+            .all()
+        )
+        return jsonify([e.to_dict() for e in entries])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------- GET /api/audit — global audit trail (instructor view) ----------
+@app.route("/api/audit", methods=["GET"])
+def get_all_audit():
+    """
+    Returns the most recent 200 audit entries across all cases.
+    Intended for instructor / admin review of overall training activity.
+    """
+    try:
+        entries = (
+            AuditLog.query
+            .order_by(AuditLog.timestamp.desc())
+            .limit(200)
+            .all()
+        )
+        return jsonify([e.to_dict() for e in entries])
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
