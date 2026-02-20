@@ -10,3 +10,6 @@ psycopg2-binary==2.9.9
 # ── Utilities ────────────────────────────────────────────────────────────────
 gunicorn==22.0.0
 python-dotenv==1.0.1
+
+# E2B(R3) XML generation
+lxml>=4.9.0
