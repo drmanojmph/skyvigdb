@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm.attributes import flag_modified
 from flask_cors import CORS
@@ -24,6 +24,142 @@ db = SQLAlchemy(app)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 
+
+# =========================================================
+# E2B(R3) XML BUILDER
+# =========================================================
+#
+# Generates ICH E2B(R3) / HL7 v3 Individual Case Safety Report XML.
+# Endpoint: GET /api/cases/<id>/e2b
+# The generated XML conforms to MCCI_IN200100UV01 (batch wrapper)
+# containing PORR_IN049016UV (ICSR), per ICH E2B(R3) Nov 2016.
+
+"""
+E2B(R3) XML Generator for SkyVigilance SafetyDB
+Generates ICH E2B(R3) compliant XML from a SafetyDB Case.to_dict() payload.
+Standard:  ICH E2B(R3) - Individual Case Safety Report
+Format:    HL7 v3 MCCI_IN200100UV01 batch wrapper -> PORR_IN049016UV
+"""
+
+from lxml import etree
+from datetime import datetime, timezone
+import uuid
+
+NS_HL7 = "urn:hl7-org:v3"
+NS_XSI = "http://www.w3.org/2001/XMLSchema-instance"
+NSMAP  = {None: NS_HL7, "xsi": NS_XSI}
+
+OID_BATCH_ID       = "2.16.840.1.113883.3.989.2.1.3.22"
+OID_MSG_ID         = "2.16.840.1.113883.3.989.2.1.3.1"
+OID_WORLDWIDE_ID   = "2.16.840.1.113883.3.989.2.1.3.2"
+OID_INTERACTION    = "2.16.840.1.113883.1.6"
+OID_MEDDRA         = "2.16.840.1.113883.6.163"
+OID_MEDDRA_VER     = "27.1"
+OID_ISO3166        = "1.0.3166.1.2.2"
+OID_ISO5218        = "1.0.5218"
+OID_RECEIVER_MSG   = "2.16.840.1.113883.3.989.2.1.3.12"
+OID_SENDER_MSG     = "2.16.840.1.113883.3.989.2.1.3.11"
+OID_RECEIVER_BATCH = "2.16.840.1.113883.3.989.2.1.3.14"
+OID_SENDER_BATCH   = "2.16.840.1.113883.3.989.2.1.3.13"
+OID_ICH_OBS        = "2.16.840.1.113883.3.989.2.1.1.19"
+OID_ICH_CAT        = "2.16.840.1.113883.3.989.2.1.1.20"
+OID_ICH_RPT_TYPE   = "2.16.840.1.113883.3.989.2.1.1.2"
+OID_ICH_RPT_CHAR   = "2.16.840.1.113883.3.989.2.1.1.23"
+OID_ICH_SOURCE_RPT = "2.16.840.1.113883.3.989.2.1.1.22"
+OID_ICH_QUAL       = "2.16.840.1.113883.3.989.2.1.1.6"
+OID_ICH_SENDER_T   = "2.16.840.1.113883.3.989.2.1.1.7"
+OID_ICH_OUTCOME    = "2.16.840.1.113883.3.989.2.1.1.11"
+OID_ICH_CHAR       = "2.16.840.1.113883.3.989.2.1.1.13"
+OID_ICH_ACTION     = "2.16.840.1.113883.3.989.2.1.1.15"
+OID_ICH_STUDY_TYPE = "2.16.840.1.113883.3.989.2.1.1.8"
+OID_ICH_IDENT      = "2.16.840.1.113883.3.989.2.1.1.4"
+OID_HL7_ACT_CODE   = "2.16.840.1.113883.5.4"
+OID_HL7_INTERP     = "2.16.840.1.113883.5.83"
+
+SEX_CODES = {"Male": "1", "Female": "2", "Unknown": "0"}
+REPORT_TYPE_CODES = {
+    "Spontaneous": "1", "Report from studies": "2",
+    "Literature": "3", "Other": "3",
+}
+QUALIFIER_CODES = {
+    "Physician": "1", "Pharmacist": "2",
+    "Other health professional": "3", "Lawyer": "4", "Consumer": "5",
+}
+SENDER_TYPE_CODES = {
+    "Pharmaceutical company": "1", "Regulatory authority": "2",
+    "Health professional": "3", "Regional pharmacovigilance centre": "4", "Other": "5",
+}
+ACTION_TAKEN_CODES = {
+    "Drug withdrawn": "1", "Dose reduced": "2", "Dose increased": "3",
+    "Dose not changed": "4", "Not applicable": "5", "Unknown": "6", "N/A": "9",
+}
+CHAR_CODES = {"Suspect": "1", "Concomitant": "2", "Interacting": "3"}
+OUTCOME_CODES = {
+    "recovered/resolved": "1", "recovering/resolving": "2",
+    "not recovered/not resolved": "3",
+    "recovered/resolved with sequelae": "4",
+    "fatal": "5", "unknown": "6",
+}
+SERIOUSNESS_KEY_MAP = {
+    "death":           ("34", "death"),
+    "lifeThreatening": ("21", "lifeThreatening"),
+    "hospitalisation": ("33", "hospitalization"),
+    "disability":      ("35", "disabilityIncapacity"),
+    "congenital":      ("12", "congenitalAnomaly"),
+    "medSignificant":  ("26", "otherMedicallyImportantCondition"),
+}
+COUNTRY_ISO2 = {
+    "United States": "US", "United Kingdom": "GB",
+    "Germany": "DE", "France": "FR", "Japan": "JP",
+    "India": "IN", "Canada": "CA", "Australia": "AU", "Brazil": "BR",
+}
+AGE_UNIT_MAP = {"years": "a", "months": "mo", "weeks": "wk", "days": "d", "hours": "h"}
+
+
+def _uuid():
+    return str(uuid.uuid4())
+
+def _ts(dt=None):
+    if dt is None:
+        dt = datetime.now(timezone.utc)
+    return dt.strftime("%Y%m%d%H%M%S")
+
+def _date(val):
+    return str(val).replace("-", "") if val else ""
+
+def _sub(parent, tag, **attrs):
+    el = etree.SubElement(parent, f"{{{NS_HL7}}}{tag}", nsmap=NSMAP)
+    for k, v in attrs.items():
+        if k == "xsi_type":
+            el.set(f"{{{NS_XSI}}}type", v)
+        else:
+            el.set(k, str(v))
+    return el
+
+def _txt(parent, tag, text, **attrs):
+    el = _sub(parent, tag, **attrs)
+    el.text = str(text) if text else ""
+    return el
+
+def _obs_code(parent, code, display="", oid=OID_ICH_OBS):
+    return _sub(parent, "code",
+                code=str(code), codeSystem=oid,
+                codeSystemVersion="2.0", displayName=display)
+
+def _bl_val(parent, bval):
+    return _sub(parent, "value", xsi_type="BL",
+                value="true" if bval else "false")
+
+def _pq_val(parent, val, unit):
+    return _sub(parent, "value", xsi_type="PQ",
+                value=str(val), unit=str(unit))
+
+def _pert_bool(parent, code, display, bval):
+    rel = _sub(parent, "outboundRelationship2", typeCode="PERT")
+    obs = _sub(rel, "observation", classCode="OBS", moodCode="EVN")
+    _obs_code(obs, code, display)
+    _bl_val(obs, bval)
+    return rel
 # =========================================================
 # MODEL
 # =========================================================
@@ -216,6 +352,737 @@ def extract_audit(data):
     performed_by = audit.get("performedBy", "unknown")
     role         = audit.get("role",        "unknown")
     return performed_by, role, data
+
+
+
+
+# E2B R3 XML BUILDER
+# =========================================================
+#
+# Full ICH E2B(R3) / HL7 v3 generator.
+# Maps SafetyDB Case fields → MCCI_IN200100UV01 batch envelope
+# containing PORR_IN049016UV individual case safety report.
+#
+# Requires: lxml (added to requirements.txt)
+# Spec ref: ICH M2 EWG E2B(R3) Implementation Guide v5.0
+#
+
+
+from lxml import etree
+from datetime import datetime
+import uuid as _uuid_mod
+
+HL7      = "urn:hl7-org:v3"
+XSI      = "http://www.w3.org/2001/XMLSchema-instance"
+XSI_TYPE = f"{{{XSI}}}type"
+NSMAP    = {None: HL7, "xsi": XSI}
+
+# ── E2B OID registry ──────────────────────────────────────────────────────────
+OID = {
+    "batch_id":         "2.16.840.1.113883.3.989.2.1.3.22",
+    "case_id":          "2.16.840.1.113883.3.989.2.1.3.1",
+    "worldwide_id":     "2.16.840.1.113883.3.989.2.1.3.2",
+    "auth_number":      "2.16.840.1.113883.3.989.2.1.3.4",
+    "sender_id":        "2.16.840.1.113883.3.989.2.1.3.11",
+    "receiver_id":      "2.16.840.1.113883.3.989.2.1.3.12",
+    "batch_sender":     "2.16.840.1.113883.3.989.2.1.3.13",
+    "batch_receiver":   "2.16.840.1.113883.3.989.2.1.3.14",
+    "cs_msg_type":      "2.16.840.1.113883.3.989.2.1.1.1",
+    "cs_report_type":   "2.16.840.1.113883.3.989.2.1.1.2",
+    "cs_mrn_type":      "2.16.840.1.113883.3.989.2.1.1.4",
+    "cs_reporter_qual": "2.16.840.1.113883.3.989.2.1.1.6",
+    "cs_sender_type":   "2.16.840.1.113883.3.989.2.1.1.7",
+    "cs_study_type":    "2.16.840.1.113883.3.989.2.1.1.8",
+    "cs_outcome":       "2.16.840.1.113883.3.989.2.1.1.11",
+    "cs_drug_char":     "2.16.840.1.113883.3.989.2.1.1.13",
+    "cs_action_taken":  "2.16.840.1.113883.3.989.2.1.1.15",
+    "cs_chall":         "2.16.840.1.113883.3.989.2.1.1.17",
+    "cs_data_elem":     "2.16.840.1.113883.3.989.2.1.1.19",
+    "cs_organizer":     "2.16.840.1.113883.3.989.2.1.1.20",
+    "cs_related_inv":   "2.16.840.1.113883.3.989.2.1.1.22",
+    "cs_inv_char":      "2.16.840.1.113883.3.989.2.1.1.23",
+    "meddra":           "2.16.840.1.113883.6.163",
+    "iso_sex":          "1.0.5218",
+    "iso_country":      "1.0.3166.1.2.2",
+    "hl7_acts":         "2.16.840.1.113883.5.4",
+    "hl7_interaction":  "2.16.840.1.113883.1.6",
+    "hl7_interp":       "2.16.840.1.113883.5.83",
+}
+
+# ── Lookup tables ─────────────────────────────────────────────────────────────
+COUNTRY_CODES = {
+    "United States": "US", "United Kingdom": "GB", "Germany": "DE",
+    "France": "FR",   "Japan": "JP",      "India": "IN",
+    "Canada": "CA",   "Australia": "AU",  "Brazil": "BR",
+    "Other": "OTH",
+}
+
+SEX_CODES = {"Male": "1", "Female": "2", "Unknown": "0"}
+
+AGE_UNITS = {"years": "a", "months": "mo", "weeks": "wk", "days": "d", "hours": "h"}
+
+REPORTER_QUAL = {
+    "Physician": "1", "Pharmacist": "2", "Nurse": "3",
+    "Other HCP": "3", "Lawyer": "4", "Consumer": "5", "Unknown": "3",
+}
+
+ACTION_TAKEN = {
+    "Withdrawn": "1", "Dose reduced": "2", "Dose increased": "3",
+    "Dose not changed": "4", "Not applicable": "5", "Unknown": "6",
+}
+
+DECHALLENGE = {
+    "Positive – Event abated on withdrawal": "1",
+    "Negative – Event did not abate": "2",
+    "Not done": "3",  "Unknown": "4",  "N/A": "9",
+}
+
+RECHALLENGE = {
+    "Positive – Event recurred": "1",
+    "Negative – Event did not recur": "2",
+    "Not done": "3",  "Unknown": "4",  "N/A": "9",
+}
+
+OUTCOMES = {
+    "Recovered / Resolved":           "1",
+    "Recovering / Resolving":         "2",
+    "Not recovered / Not resolved":   "3",
+    "Recovered with sequelae":        "4",
+    "Fatal":                          "5",
+    "Unknown":                        "6",
+}
+
+SERIOUS_CODES = {
+    "death":            "34",   # resultsInDeath
+    "lifeThreatening":  "21",   # lifeThreatening
+    "hospitalised":     "33",   # requiresInpatientHospitalization
+    "hospitalisation":  "33",
+    "disability":       "35",   # resultsInPersistentOrSignificantDisability
+    "congenital":       "12",   # congenitalAnomalyBirthDefect
+    "medSignificant":   "26",   # otherMedicallyImportantCondition
+}
+
+SOURCE_TYPE = {
+    "Spontaneous": "1", "Literature": "2", "Clinical Study": "2",
+    "Report from studies": "2", "Regulatory Authority": "3",
+    "Compassionate Use": "3", "Other": "3",
+}
+
+DRUG_CHAR = {
+    "Suspect": "1", "Concomitant": "2",
+    "Treatment/Other": "2", "Interacting": "3",
+}
+
+SENDER_TYPE = {
+    "Pharmaceutical company": "1", "Regulatory authority": "2",
+    "Health professional": "3",   "Regional pharmacovigilance centre": "4",
+    "Other": "5",
+}
+
+
+# ── XML helpers ───────────────────────────────────────────────────────────────
+
+def E(tag, attrib=None, text=None, parent=None):
+    """Create an HL7 namespace element; append to parent if given."""
+    e = (etree.Element(f"{{{HL7}}}{tag}", attrib or {}, nsmap=NSMAP)
+         if parent is None
+         else etree.SubElement(parent, f"{{{HL7}}}{tag}", attrib or {}))
+    if text is not None:
+        e.text = str(text)
+    return e
+
+
+def d(iso_date):
+    """Convert YYYY-MM-DD → YYYYMMDD (E2B date format). Safe for None."""
+    return iso_date.replace("-", "") if iso_date else None
+
+
+def ts_now():
+    return datetime.utcnow().strftime("%Y%m%d%H%M%S")
+
+
+def new_uuid():
+    return str(_uuid_mod.uuid4())
+
+
+def coded_obs(parent, code_val, disp_name, value_attribs, value_text=None):
+    """
+    Build a standard 'subjectOf2 > observation > code + value' block.
+    Returns the value element.
+    """
+    subj = E("subjectOf2", {"typeCode": "SBJ"}, parent=parent)
+    obs  = E("observation", {"classCode": "OBS", "moodCode": "EVN"}, parent=subj)
+    E("code", {
+        "code":              code_val,
+        "codeSystem":        OID["cs_data_elem"],
+        "codeSystemVersion": "2.0",
+        "displayName":       disp_name,
+    }, parent=obs)
+    val = E("value", value_attribs, text=value_text, parent=obs)
+    return val
+
+
+# ── Main builder ──────────────────────────────────────────────────────────────
+
+def build_e2b_xml(case):
+    """
+    Convert a SafetyDB Case ORM object → ICH E2B(R3) XML string.
+    Returns a UTF-8 encoded XML string beginning with the XML declaration.
+    """
+    now   = ts_now()
+    tr    = case.triage   or {}
+    gen   = case.general  or {}
+    pat   = case.patient  or {}
+    prods = case.products or []
+    evts  = case.events   or []
+    med   = case.medical  or {}
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # MCCI_IN200100UV01  —  Batch envelope
+    # ──────────────────────────────────────────────────────────────────────────
+    root = E("MCCI_IN200100UV01", {"ITSVersion": "XML_1.0"})
+    E("id",             {"root": OID["batch_id"],     "extension": f"BATCH-{now}"},                  parent=root)
+    E("creationTime",   {"value": now},                                                               parent=root)
+    E("responseModeCode", {"code": "D"},                                                              parent=root)
+    E("interactionId",  {"root": OID["hl7_interaction"], "extension": "MCCI_IN200100UV01"},           parent=root)
+    E("name",           {"code": "1", "codeSystem": OID["cs_msg_type"],
+                          "codeSystemVersion": "2.0", "displayName": "ICHICSR"},                     parent=root)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # PORR_IN049016UV  —  Individual Safety Report
+    # ──────────────────────────────────────────────────────────────────────────
+    porr = E("PORR_IN049016UV", parent=root)
+    E("id",               {"root": OID["case_id"], "extension": case.id},                            parent=porr)
+    E("creationTime",     {"value": now},                                                             parent=porr)
+    E("interactionId",    {"root": OID["hl7_interaction"], "extension": "PORR_IN049016UV"},           parent=porr)
+    E("processingCode",   {"code": "P"},                                                              parent=porr)
+    E("processingModeCode", {"code": "T"},                                                            parent=porr)
+    E("acceptAckCode",    {"code": "AL"},                                                             parent=porr)
+
+    recv_dev = E("device", {"classCode": "DEV", "determinerCode": "INSTANCE"},
+                 parent=E("receiver", {"typeCode": "RCV"}, parent=porr))
+    E("id", {"root": OID["receiver_id"], "extension": "EVTEST"}, parent=recv_dev)
+
+    snd_dev = E("device", {"classCode": "DEV", "determinerCode": "INSTANCE"},
+                parent=E("sender", {"typeCode": "SND"}, parent=porr))
+    E("id", {"root": OID["sender_id"], "extension": "SKYVIGILANCE"}, parent=snd_dev)
+
+    # controlActProcess
+    cap = E("controlActProcess", {"classCode": "CACT", "moodCode": "EVN"}, parent=porr)
+    E("code",         {"code": "PORR_TE049016UV", "codeSystem": OID["hl7_interaction"]}, parent=cap)
+    E("effectiveTime", {"value": now},                                                   parent=cap)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # investigationEvent
+    # ──────────────────────────────────────────────────────────────────────────
+    inv = E("investigationEvent", {"classCode": "INVSTG", "moodCode": "EVN"},
+            parent=E("subject", {"typeCode": "SUBJ"}, parent=cap))
+
+    E("id",   {"root": OID["case_id"], "extension": case.id},      parent=inv)
+    E("code", {"code": "PAT_ADV_EVNT", "codeSystem": OID["hl7_acts"]}, parent=inv)
+
+    # Narrative
+    if case.narrative:
+        E("text", parent=inv, text=case.narrative)
+
+    E("statusCode", {"code": "active"}, parent=inv)
+
+    # Receipt date (E.1) and availability time (E.2)
+    if tr.get("receiptDate"):
+        E("low", {"value": d(tr["receiptDate"])},
+          parent=E("effectiveTime", parent=inv))
+
+    report_date = gen.get("centralReceiptDate") or tr.get("receiptDate")
+    E("availabilityTime", {"value": d(report_date) if report_date else now[:8]}, parent=inv)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # adverseEventAssessment
+    # ──────────────────────────────────────────────────────────────────────────
+    assessment = E("adverseEventAssessment", {"classCode": "INVSTG", "moodCode": "EVN"},
+                   parent=E("component", {"typeCode": "COMP"}, parent=inv))
+
+    prim_role = E("primaryRole", {"classCode": "INVSBJ"},
+                  parent=E("subject1", {"typeCode": "SBJ"}, parent=assessment))
+
+    # ── Patient (B.1) ────────────────────────────────────────────────────────
+    player = E("player1", {"classCode": "PSN", "determinerCode": "INSTANCE"}, parent=prim_role)
+
+    # B.1.1 Patient initials
+    initials = pat.get("initials") or tr.get("patientInitials")
+    if initials:
+        E("name", parent=player, text=initials)
+
+    # B.1.2.1 Sex
+    sex_code = SEX_CODES.get(pat.get("sex", ""), "0")
+    E("administrativeGenderCode", {"code": sex_code, "codeSystem": OID["iso_sex"]}, parent=player)
+
+    # B.1.2.2a / B.1.3 Date of birth
+    if pat.get("dob"):
+        E("birthTime", {"value": d(pat["dob"])}, parent=player)
+
+    # Patient ID (if present)
+    if pat.get("patId"):
+        id_ent = E("asIdentifiedEntity", {"classCode": "IDENT"}, parent=player)
+        E("id", {"root": OID["case_id"], "extension": pat["patId"]}, parent=id_ent)
+        E("code", {"code": "1", "codeSystem": OID["cs_mrn_type"],
+                   "codeSystemVersion": "2.0", "displayName": "GP"}, parent=id_ent)
+
+    # B.1.4 Age at time of onset
+    if pat.get("age"):
+        val = coded_obs(prim_role, "3", "age",
+                        {XSI_TYPE: "PQ",
+                         "value": str(pat["age"]),
+                         "unit":  AGE_UNITS.get(pat.get("ageUnit", "years"), "a")})
+
+    # B.1.5 Body weight
+    if pat.get("weight"):
+        coded_obs(prim_role, "7", "bodyWeight",
+                  {XSI_TYPE: "PQ", "value": str(pat["weight"]), "unit": "kg"})
+
+    # B.1.6 Height
+    if pat.get("height"):
+        coded_obs(prim_role, "17", "height",
+                  {XSI_TYPE: "PQ", "value": str(pat["height"]), "unit": "cm"})
+
+    # ── Medical History (B.1.7) ───────────────────────────────────────────────
+    history_entries = [h for h in (pat.get("otherHistory") or []) if h.get("description")]
+    if history_entries:
+        hist_org = E("organizer", {"classCode": "CATEGORY", "moodCode": "EVN"},
+                     parent=E("subjectOf2", {"typeCode": "SBJ"}, parent=prim_role))
+        E("code", {"code": "1", "codeSystem": OID["cs_organizer"],
+                   "codeSystemVersion": "2.0",
+                   "displayName": "relevantMedicalHistoryAndConcurrentConditions"}, parent=hist_org)
+
+        for h in history_entries:
+            h_obs = E("observation", {"classCode": "OBS", "moodCode": "EVN"},
+                      parent=E("component", {"typeCode": "COMP"}, parent=hist_org))
+            # No MedDRA code available from the free-text history form
+            code_el = E("code", {"nullFlavor": "UNK"}, parent=h_obs)
+            E("originalText", parent=code_el, text=h["description"])
+
+            if h.get("startDate") or h.get("stopDate"):
+                eff = E("effectiveTime", {XSI_TYPE: "IVL_TS"}, parent=h_obs)
+                if h.get("startDate"): E("low",  {"value": d(h["startDate"])}, parent=eff)
+                if h.get("stopDate"):  E("high", {"value": d(h["stopDate"])},  parent=eff)
+
+            if h.get("ongoing"):
+                cont_rel = E("observation", {"classCode": "OBS", "moodCode": "EVN"},
+                             parent=E("inboundRelationship", {"typeCode": "REFR"}, parent=h_obs))
+                E("code", {"code": "13", "codeSystem": OID["cs_data_elem"],
+                           "codeSystemVersion": "2.0", "displayName": "continuing"}, parent=cont_rel)
+                E("value", {XSI_TYPE: "BL", "value": "true"}, parent=cont_rel)
+
+            if h.get("notes"):
+                note_obs = E("observation", {"classCode": "OBS", "moodCode": "EVN"},
+                             parent=E("outboundRelationship2", {"typeCode": "COMP"}, parent=h_obs))
+                E("code", {"code": "10", "codeSystem": OID["cs_data_elem"],
+                           "codeSystemVersion": "2.0", "displayName": "comment"}, parent=note_obs)
+                E("value", {XSI_TYPE: "ED"}, text=h["notes"], parent=note_obs)
+
+    # ── Lab Tests (B.1.7h) ────────────────────────────────────────────────────
+    lab_entries = [l for l in (pat.get("labData") or []) if l.get("testName")]
+    if lab_entries:
+        test_org = E("organizer", {"classCode": "CATEGORY", "moodCode": "EVN"},
+                     parent=E("subjectOf2", {"typeCode": "SBJ"}, parent=prim_role))
+        E("code", {"code": "3", "codeSystem": OID["cs_organizer"],
+                   "codeSystemVersion": "2.0",
+                   "displayName": "testsAndProceduresRelevantToTheInvestigation"}, parent=test_org)
+
+        for lab in lab_entries:
+            t_obs = E("observation", {"classCode": "OBS", "moodCode": "EVN"},
+                      parent=E("component", {"typeCode": "COMP"}, parent=test_org))
+            t_code = E("code", {"code": "10000001", "codeSystem": OID["meddra"]}, parent=t_obs)
+            E("originalText", parent=t_code, text=lab["testName"])
+
+            if lab.get("testDate"):
+                E("effectiveTime", {"value": d(lab["testDate"])}, parent=t_obs)
+
+            if lab.get("result"):
+                result_val = lab["result"]
+                if lab.get("units"):
+                    result_val += f" {lab['units']}"
+                E("value", {XSI_TYPE: "ED"}, text=result_val, parent=t_obs)
+
+            for bound, interp_code in [(lab.get("normLow"), "L"), (lab.get("normHigh"), "H")]:
+                if bound:
+                    rr_range = E("observationRange", {"classCode": "OBS", "moodCode": "EVN.CRT"},
+                                 parent=E("referenceRange", {"typeCode": "REFV"}, parent=t_obs))
+                    E("value",  {XSI_TYPE: "PQ", "value": str(bound),
+                                 "unit": lab.get("units", "")}, parent=rr_range)
+                    E("interpretationCode", {"code": interp_code,
+                                             "codeSystem": OID["hl7_interp"]}, parent=rr_range)
+
+    # ── Drug Information (B.4 / B.5) ─────────────────────────────────────────
+    drug_ids = []   # [(uuid_str, drug_dict), ...]
+
+    if prods:
+        drug_org = E("organizer", {"classCode": "CATEGORY", "moodCode": "EVN"},
+                     parent=E("subjectOf2", {"typeCode": "SBJ"}, parent=prim_role))
+        E("code", {"code": "4", "codeSystem": OID["cs_organizer"],
+                   "codeSystemVersion": "2.0", "displayName": "drugInformation"}, parent=drug_org)
+
+        for drug in prods:
+            drug_uuid = new_uuid()
+            drug_ids.append((drug_uuid, drug))
+
+            sub_admin = E("substanceAdministration", {"classCode": "SBADM", "moodCode": "EVN"},
+                          parent=E("component", {"typeCode": "COMP"}, parent=drug_org))
+            E("id", {"root": drug_uuid}, parent=sub_admin)
+
+            # ── Product identification ──
+            product = E("kindOfProduct", {"classCode": "MMAT", "determinerCode": "KIND"},
+                        parent=E("instanceOfKind", {"classCode": "INST"},
+                                 parent=E("consumable", {"typeCode": "CSM"}, parent=sub_admin)))
+
+            if drug.get("name"):
+                E("name", parent=product, text=drug["name"])
+
+            # INN / generic name via activeIngredient (E2B R3 §B.4.k.2.2)
+            if drug.get("genericName"):
+                ing_subst = E("ingredientSubstance",
+                              {"classCode": "MMAT", "determinerCode": "KIND"},
+                              parent=E("ingredient",
+                                       {"classCode": "INGR", "determinerCode": "KIND"},
+                                       parent=E("activeIngredient", {"classCode": "ACTI"},
+                                                parent=product)))
+                E("name", parent=ing_subst, text=drug["genericName"])
+
+            # Marketing authorisation (B.4.k.3.1 / B.4.k.3.2)
+            if drug.get("authNumber") or drug.get("authCountry"):
+                approval = E("approval", {"classCode": "CNTRCT", "moodCode": "EVN"},
+                             parent=E("subjectOf", {"typeCode": "SBJ"},
+                                      parent=E("asManufacturedProduct", {"classCode": "MANU"},
+                                               parent=product)))
+                if drug.get("authNumber"):
+                    E("id", {"root": OID["auth_number"], "extension": drug["authNumber"]},
+                      parent=approval)
+                if drug.get("authCountry"):
+                    ctry_code = COUNTRY_CODES.get(drug["authCountry"],
+                                                   drug["authCountry"][:2].upper())
+                    E("code", {"code": ctry_code, "codeSystem": OID["iso_country"]},
+                      parent=E("territory", {"classCode": "NAT", "determinerCode": "INSTANCE"},
+                               parent=E("territorialAuthority", {"classCode": "TERR"},
+                                        parent=E("author", {"typeCode": "AUT"}, parent=approval))))
+
+            # ── Dosage regimen (B.4.k.4 – B.4.k.6) ──
+            if any(drug.get(f) for f in ("dose", "route", "startDate", "stopDate",
+                                          "frequency", "formulation", "batch")):
+                dose_admin = E("substanceAdministration",
+                               {"classCode": "SBADM", "moodCode": "EVN"},
+                               parent=E("outboundRelationship2", {"typeCode": "COMP"},
+                                        parent=sub_admin))
+
+                if drug.get("frequency"):
+                    E("text", parent=dose_admin, text=drug["frequency"])
+
+                if drug.get("startDate") or drug.get("stopDate"):
+                    eff = E("effectiveTime", {XSI_TYPE: "IVL_TS"}, parent=dose_admin)
+                    if drug.get("startDate"):
+                        E("low",  {"value": d(drug["startDate"])}, parent=eff)
+                    if drug.get("stopDate"):
+                        E("high", {"value": d(drug["stopDate"])},  parent=eff)
+
+                if drug.get("route"):
+                    route_el = E("routeCode", {"code": drug["route"]}, parent=dose_admin)
+                    E("originalText", parent=route_el, text=drug["route"])
+
+                if drug.get("dose"):
+                    E("doseQuantity",
+                      {"value": str(drug["dose"]), "unit": drug.get("doseUnit", "mg")},
+                      parent=dose_admin)
+
+                # Formulation (B.4.k.4.1)
+                if drug.get("formulation"):
+                    form_prod = E("kindOfProduct",
+                                  {"classCode": "MMAT", "determinerCode": "KIND"},
+                                  parent=E("instanceOfKind", {"classCode": "INST"},
+                                           parent=E("consumable", {"typeCode": "CSM"},
+                                                    parent=dose_admin)))
+                    fc = E("formCode", {"code": drug["formulation"]}, parent=form_prod)
+                    E("originalText", parent=fc, text=drug["formulation"])
+
+                # Batch/lot number (B.4.k.4.2)
+                if drug.get("batch"):
+                    lot = E("productInstanceInstance",
+                            {"classCode": "MMAT", "determinerCode": "INSTANCE"},
+                            parent=E("instanceOfKind", {"classCode": "INST"},
+                                     parent=E("consumable", {"typeCode": "CSM"},
+                                              parent=dose_admin)))
+                    E("lotNumberText", parent=lot, text=drug["batch"])
+
+            # ── Indication (B.4.k.11) ──
+            if drug.get("indication"):
+                ind_obs = E("observation", {"classCode": "OBS", "moodCode": "EVN"},
+                            parent=E("inboundRelationship", {"typeCode": "RSON"},
+                                     parent=sub_admin))
+                E("code", {"code": "19", "codeSystem": OID["cs_data_elem"],
+                           "codeSystemVersion": "2.0", "displayName": "indication"}, parent=ind_obs)
+                ind_val = E("value", {XSI_TYPE: "CE", "code": "10000001",
+                                      "codeSystem": OID["meddra"],
+                                      "codeSystemVersion": "27.0"}, parent=ind_obs)
+                E("originalText", parent=ind_val, text=drug["indication"])
+
+            # ── Action taken (B.4.k.7) ──
+            if drug.get("actionTaken"):
+                act_obs = E("act", {"classCode": "ACT", "moodCode": "EVN"},
+                            parent=E("inboundRelationship", {"typeCode": "CAUS"},
+                                     parent=sub_admin))
+                E("code", {XSI_TYPE: "CE",
+                            "code": ACTION_TAKEN.get(drug["actionTaken"], "5"),
+                            "codeSystem": OID["cs_action_taken"],
+                            "codeSystemVersion": "2.0"}, parent=act_obs)
+
+            # ── Dechallenge (B.4.k.8) ──
+            if drug.get("dechallenge"):
+                ch_obs = E("observation", {"classCode": "OBS", "moodCode": "EVN"},
+                           parent=E("outboundRelationship2", {"typeCode": "PERT"},
+                                    parent=sub_admin))
+                E("code", {"code": "16", "codeSystem": OID["cs_data_elem"],
+                           "codeSystemVersion": "2.0", "displayName": "dechallenge"}, parent=ch_obs)
+                E("value", {XSI_TYPE: "CE",
+                             "code": DECHALLENGE.get(drug["dechallenge"], "4"),
+                             "codeSystem": OID["cs_chall"],
+                             "codeSystemVersion": "2.0"}, parent=ch_obs)
+
+            # ── Rechallenge (B.4.k.9) ──
+            if drug.get("rechallenge"):
+                rch_obs = E("observation", {"classCode": "OBS", "moodCode": "EVN"},
+                            parent=E("outboundRelationship2", {"typeCode": "PERT"},
+                                     parent=sub_admin))
+                E("code", {"code": "32", "codeSystem": OID["cs_data_elem"],
+                           "codeSystemVersion": "2.0", "displayName": "rechallenge"}, parent=rch_obs)
+                E("value", {XSI_TYPE: "CE",
+                             "code": RECHALLENGE.get(drug["rechallenge"], "4"),
+                             "codeSystem": OID["cs_chall"],
+                             "codeSystemVersion": "2.0"}, parent=rch_obs)
+
+            # ── Blinded flag (required structural element) ──
+            blind_obs = E("observation", {"classCode": "OBS", "moodCode": "EVN"},
+                          parent=E("outboundRelationship2", {"typeCode": "PERT"},
+                                   parent=sub_admin))
+            E("code", {"code": "6", "codeSystem": OID["cs_data_elem"],
+                       "codeSystemVersion": "2.0", "displayName": "blinded"}, parent=blind_obs)
+            E("value", {XSI_TYPE: "BL", "value": "false"}, parent=blind_obs)
+
+    # ── Reactions / Adverse Events (B.2) ─────────────────────────────────────
+    react_ids = []   # [(uuid_str, event_dict), ...]
+
+    for evt in evts:
+        r_uuid = new_uuid()
+        react_ids.append((r_uuid, evt))
+
+        r_obs = E("observation", {"classCode": "OBS", "moodCode": "EVN"},
+                  parent=E("subjectOf2", {"typeCode": "SBJ"}, parent=prim_role))
+        E("id",   {"root": r_uuid}, parent=r_obs)
+        E("code", {"code": "29", "codeSystem": OID["cs_data_elem"],
+                   "codeSystemVersion": "2.0", "displayName": "reaction"}, parent=r_obs)
+
+        # Timing — onset date (B.2.i.4) / end date (B.2.i.5)
+        if evt.get("onsetDate") or evt.get("stopDate"):
+            eff = E("effectiveTime", {XSI_TYPE: "IVL_TS"}, parent=r_obs)
+            if evt.get("onsetDate"): E("low",  {"value": d(evt["onsetDate"])}, parent=eff)
+            if evt.get("stopDate"):  E("high", {"value": d(evt["stopDate"])},  parent=eff)
+
+        # Reaction term — MedDRA PT (B.2.i.2.1a) + verbatim (B.2.i.1.1a)
+        meddra_code = evt.get("meddraCode", "10000001")
+        r_val = E("value", {XSI_TYPE: "CE",
+                             "code":              meddra_code,
+                             "codeSystem":        OID["meddra"],
+                             "codeSystemVersion": "27.0"}, parent=r_obs)
+        # Verbatim original term
+        if evt.get("term"):
+            E("originalText", {"language": "eng"}, text=evt["term"], parent=r_val)
+
+        # Country of occurrence (B.2.i.3 — derived from triage COI)
+        ctry = tr.get("country")
+        if ctry:
+            ctry_code = COUNTRY_CODES.get(ctry, ctry[:2].upper())
+            E("code", {"code": ctry_code, "codeSystem": OID["iso_country"]},
+              parent=E("locatedPlace", {"classCode": "COUNTRY", "determinerCode": "INSTANCE"},
+                       parent=E("locatedEntity", {"classCode": "LOCE"},
+                                parent=E("location", {"typeCode": "LOC"}, parent=r_obs))))
+
+        # Seriousness (B.2.i.7.x) — event-level first, fall back to triage/general
+        serious = evt.get("seriousness") or {}
+        if not any(serious.values()):
+            serious = tr.get("seriousness") or gen.get("seriousness") or {}
+        for key, code_val in SERIOUS_CODES.items():
+            if serious.get(key):
+                s_obs = E("observation", {"classCode": "OBS", "moodCode": "EVN"},
+                          parent=E("outboundRelationship2", {"typeCode": "PERT"}, parent=r_obs))
+                E("code", {"code": code_val, "codeSystem": OID["cs_data_elem"],
+                           "codeSystemVersion": "2.0"}, parent=s_obs)
+                E("value", {XSI_TYPE: "BL", "value": "true"}, parent=s_obs)
+
+        # Outcome (B.2.i.8)
+        if evt.get("outcome"):
+            out_obs = E("observation", {"classCode": "OBS", "moodCode": "EVN"},
+                        parent=E("outboundRelationship2", {"typeCode": "PERT"}, parent=r_obs))
+            E("code", {"code": "27", "codeSystem": OID["cs_data_elem"],
+                       "codeSystemVersion": "2.0", "displayName": "outcome"}, parent=out_obs)
+            E("value", {XSI_TYPE: "CE",
+                         "code": OUTCOMES.get(evt["outcome"], "6"),
+                         "codeSystem": OID["cs_outcome"],
+                         "codeSystemVersion": "2.0"}, parent=out_obs)
+
+        # Death date — if event is fatal
+        if evt.get("seriousness", {}).get("death") and evt.get("deathDate"):
+            death_obs = E("observation", {"classCode": "OBS", "moodCode": "EVN"},
+                          parent=E("outboundRelationship2", {"typeCode": "PERT"}, parent=r_obs))
+            E("code", {"code": "34", "codeSystem": OID["cs_data_elem"],
+                       "codeSystemVersion": "2.0", "displayName": "dateOfDeath"}, parent=death_obs)
+            E("value", {XSI_TYPE: "TS", "value": d(evt["deathDate"])}, parent=death_obs)
+
+    # ── Causality Assessments (B.4.k.18 / B.4.k.19) ─────────────────────────
+
+    # WHO-UMC result (computed by Medical Reviewer)
+    if med.get("causality"):
+        caus_obs = E("causalityAssessment", {"classCode": "OBS", "moodCode": "EVN"},
+                     parent=E("component", {"typeCode": "COMP"}, parent=assessment))
+        E("code", {"code": "39", "codeSystem": OID["cs_data_elem"],
+                   "codeSystemVersion": "2.0", "displayName": "causality"}, parent=caus_obs)
+        E("value", {XSI_TYPE: "ST"}, text=med["causality"], parent=caus_obs)
+
+        method_el = E("methodCode", parent=caus_obs)
+        E("originalText", parent=method_el,
+          text=med.get("causalityMethod", "WHO-UMC"))
+
+        src_assign = E("assignedEntity", {"classCode": "ASSIGNED"},
+                       parent=E("author", {"typeCode": "AUT"}, parent=caus_obs))
+        E("originalText", parent=E("code", parent=src_assign), text="Medical Reviewer")
+
+        # Cross-link to first reaction
+        if react_ids:
+            E("id", {"root": react_ids[0][0]},
+              parent=E("adverseEffectReference", {"classCode": "OBS", "moodCode": "EVN"},
+                       parent=E("subject1", {"typeCode": "SUBJ"}, parent=caus_obs)))
+        # Cross-link to first suspect drug
+        if drug_ids:
+            E("id", {"root": drug_ids[0][0]},
+              parent=E("productUseReference", {"classCode": "SBADM", "moodCode": "EVN"},
+                       parent=E("subject2", {"typeCode": "SUBJ"}, parent=caus_obs)))
+
+    # Naranjo score (supplementary assessment)
+    if med.get("naranjResult"):
+        nar_obs = E("causalityAssessment", {"classCode": "OBS", "moodCode": "EVN"},
+                    parent=E("component", {"typeCode": "COMP"}, parent=assessment))
+        E("code", {"code": "39", "codeSystem": OID["cs_data_elem"],
+                   "codeSystemVersion": "2.0", "displayName": "causality"}, parent=nar_obs)
+        score_text = (f"{med['naranjResult']}"
+                      f" (Naranjo score: {med.get('naranjScore', 'N/A')})")
+        E("value", {XSI_TYPE: "ST"}, text=score_text, parent=nar_obs)
+        E("originalText", parent=E("methodCode", parent=nar_obs), text="Naranjo Algorithm")
+
+    # ── Intervention Characterization — drug role (Suspect/Concomitant) ──────
+    for d_uuid, drug in drug_ids:
+        ic_obs = E("causalityAssessment", {"classCode": "OBS", "moodCode": "EVN"},
+                   parent=E("component", {"typeCode": "COMP"}, parent=assessment))
+        E("code", {"code": "20", "codeSystem": OID["cs_data_elem"],
+                   "codeSystemVersion": "2.0",
+                   "displayName": "interventionCharacterization"}, parent=ic_obs)
+        E("value", {XSI_TYPE: "CE",
+                     "code": DRUG_CHAR.get(drug.get("role", "Suspect"), "1"),
+                     "codeSystem": OID["cs_drug_char"],
+                     "codeSystemVersion": "2.0"}, parent=ic_obs)
+        E("id", {"root": d_uuid},
+          parent=E("productUseReference", {"classCode": "SBADM", "moodCode": "EVN"},
+                   parent=E("subject2", {"typeCode": "SUBJ"}, parent=ic_obs)))
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Reporter Information (A.2.1 Primary Source)
+    # ──────────────────────────────────────────────────────────────────────────
+    reporter_first = tr.get("reporterFirst", "")
+    reporter_last  = tr.get("reporterLast",  "")
+    reporter_qual  = tr.get("qualification", "")
+    reporter_inst  = tr.get("institution",   "")
+
+    if reporter_first or reporter_last or reporter_inst:
+        rep_rel = E("outboundRelationship", {"typeCode": "SPRT"}, parent=inv)
+        E("priorityNumber", {"value": "1"}, parent=rep_rel)
+
+        rel_inv = E("relatedInvestigation", {"classCode": "INVSTG", "moodCode": "EVN"},
+                    parent=rep_rel)
+        E("code", {"code": "2", "codeSystem": OID["cs_related_inv"],
+                   "codeSystemVersion": "2.0", "displayName": "sourceReport"}, parent=rel_inv)
+
+        rep_subj2 = E("subjectOf2", {"typeCode": "SUBJ"}, parent=rel_inv)
+        ctrl_act  = E("controlActEvent", {"classCode": "CACT", "moodCode": "EVN"}, parent=rep_subj2)
+        assigned  = E("assignedEntity", {"classCode": "ASSIGNED"},
+                      parent=E("author", {"typeCode": "AUT"}, parent=ctrl_act))
+
+        person   = E("assignedPerson", {"classCode": "PSN", "determinerCode": "INSTANCE"},
+                     parent=assigned)
+        name_el  = E("name", parent=person)
+        if reporter_first: E("given",  parent=name_el, text=reporter_first)
+        if reporter_last:  E("family", parent=name_el, text=reporter_last)
+
+        if reporter_qual:
+            E("code", {"code": REPORTER_QUAL.get(reporter_qual, "3"),
+                        "codeSystem": OID["cs_reporter_qual"],
+                        "codeSystemVersion": "2.0"},
+              parent=E("asQualifiedEntity", {"classCode": "QUAL"}, parent=person))
+
+        if ctry:
+            ctry_code = COUNTRY_CODES.get(ctry, "OTH")
+            E("code", {"code": ctry_code, "codeSystem": OID["iso_country"]},
+              parent=E("location", {"classCode": "COUNTRY", "determinerCode": "INSTANCE"},
+                       parent=E("asLocatedEntity", {"classCode": "LOCE"}, parent=person)))
+
+        if reporter_inst:
+            E("name", parent=E("representedOrganization",
+                                {"classCode": "ORG", "determinerCode": "INSTANCE"},
+                                parent=assigned),
+              text=reporter_inst)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Sender Information (A.3)
+    # ──────────────────────────────────────────────────────────────────────────
+    send_assign = E("assignedEntity", {"classCode": "ASSIGNED"},
+                    parent=E("author", {"typeCode": "AUT"},
+                             parent=E("controlActEvent", {"classCode": "CACT", "moodCode": "EVN"},
+                                      parent=E("subjectOf1", {"typeCode": "SUBJ"}, parent=inv))))
+    E("code", {"code": "1",   # Pharmaceutical company
+                "codeSystem": OID["cs_sender_type"],
+                "codeSystemVersion": "2.0"}, parent=send_assign)
+    E("name",
+      parent=E("representedOrganization",
+               {"classCode": "ORG", "determinerCode": "INSTANCE"}, parent=send_assign),
+      text="SkyVigilance SafetyDB Training Platform — For training purposes only")
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # ICH Report Type (A.1.7.1)
+    # ──────────────────────────────────────────────────────────────────────────
+    source_type = gen.get("sourceType") or tr.get("reportType") or "Spontaneous"
+    rep_type_char = E("investigationCharacteristic", {"classCode": "OBS", "moodCode": "EVN"},
+                      parent=E("subjectOf2", {"typeCode": "SUBJ"}, parent=inv))
+    E("code", {"code": "1", "codeSystem": OID["cs_inv_char"],
+               "codeSystemVersion": "2.0", "displayName": "ichReportType"}, parent=rep_type_char)
+    E("value", {XSI_TYPE: "CE",
+                 "code":       SOURCE_TYPE.get(source_type, "1"),
+                 "codeSystem": OID["cs_report_type"],
+                 "codeSystemVersion": "2.0"}, parent=rep_type_char)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Batch-level sender / receiver (on root MCCI wrapper)
+    # ──────────────────────────────────────────────────────────────────────────
+    batch_recv_dev = E("device", {"classCode": "DEV", "determinerCode": "INSTANCE"},
+                       parent=E("receiver", {"typeCode": "RCV"}, parent=root))
+    E("id", {"root": OID["batch_receiver"], "extension": "EVTEST"}, parent=batch_recv_dev)
+
+    batch_snd_dev = E("device", {"classCode": "DEV", "determinerCode": "INSTANCE"},
+                      parent=E("sender", {"typeCode": "SND"}, parent=root))
+    E("id", {"root": OID["batch_sender"], "extension": "SKYVIGILANCE"}, parent=batch_snd_dev)
+
+    # Serialise
+    xml_str = (etree.tostring(root, pretty_print=True,
+                              xml_declaration=True, encoding="UTF-8")
+               .decode("utf-8"))
+
+    # lxml 6.x serialises {urn:hl7-org:v3}name as <n> (HL7 compact form).
+    # E2B R3 regulatory systems expect the full <name> element — restore it.
+    xml_str = xml_str.replace("<n>", "<name>").replace("</n>", "</name>")
+
+    return xml_str
 
 
 # =========================================================
@@ -550,6 +1417,49 @@ def delete_all_cases():
         return jsonify({"error": str(e)}), 500
 
 
+# ---------- GET /api/cases/<id>/e2b — generate E2B R3 ICH XML ----------
+@app.route("/api/cases/<case_id>/e2b", methods=["GET"])
+def generate_e2b(case_id):
+    """
+    Returns a fully-formed ICH E2B(R3) ICHICSR XML for the given case.
+    Available from Step 3 (Medical Review) onward, once MedDRA coding is present.
+
+    The XML conforms to:
+      - ICH guideline E2B(R3) - Individual Case Safety Report
+      - HL7 v3 MCCI_IN200100UV01 / PORR_IN049016UV message structure
+      - EudraVigilance / EVWEB interchange format
+      - FDA FAERS E2B(R3) submission requirements
+
+    Returned as application/xml with Content-Disposition for browser download.
+    """
+    try:
+        case = Case.query.get(case_id)
+        if case is None:
+            return jsonify({"error": "Case not found"}), 404
+
+        if case.current_step < 3:
+            return jsonify({
+                "error": "E2B R3 XML is only available from Medical Review (Step 3) onward.",
+                "hint": "Complete MedDRA coding in Medical Review before generating E2B XML."
+            }), 422
+
+        xml_str = build_e2b_xml(case)
+
+        from flask import Response
+        return Response(
+            xml_str,
+            mimetype="application/xml",
+            headers={
+                "Content-Disposition": f'attachment; filename="E2B_{case_id}.xml"',
+                "X-E2B-Standard":     "ICH E2B(R3)",
+                "X-Message-Type":     "MCCI_IN200100UV01",
+                "X-Case-ID":          case_id,
+            }
+        )
+    except Exception as e:
+        return jsonify({"error": f"XML generation failed: {str(e)}"}), 500
+
+
 # ---------- GET /api/cases/<id>/audit — full audit trail for one case ----------
 @app.route("/api/cases/<case_id>/audit", methods=["GET"])
 def get_case_audit(case_id):
@@ -588,7 +1498,114 @@ def get_all_audit():
         return jsonify({"error": str(e)}), 500
 
 
+# ---------- GET /api/cases/<id>/e2b — E2B R3 XML download ----------
+@app.route("/api/cases/<case_id>/e2b", methods=["GET"])
+def get_case_e2b(case_id):
+    """
+    Generate and return an ICH E2B(R3) XML file for a single case.
+
+    The response is delivered as an attachment download so the browser
+    saves it directly as PV-XXXXX.xml — matching the behaviour of
+    EudraVigilance Gateway and FDA FAERS E2B submission workflows.
+
+    Available from any workflow step (step 1+). Data completeness
+    improves as the case moves through Triage → Data Entry → Medical.
+
+    Regulatory references:
+      ICH E2B(R3) Implementation Guide v5.0
+      EU GVP Module VI — Management and Reporting of ICSRs
+      FDA 21 CFR 314.81 / 21 CFR 600.80
+    """
+    try:
+        case = Case.query.get(case_id)
+        if case is None:
+            return jsonify({"error": "Case not found"}), 404
+
+        xml_str = build_e2b_xml(case)
+        filename = f"E2B_{case_id}.xml"
+
+        return Response(
+            xml_str,
+            mimetype="application/xml",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Content-Type":        "application/xml; charset=utf-8",
+                "X-E2B-Standard":      "ICH E2B(R3)",
+                "X-Case-ID":           case_id,
+                "X-Generated-By":      "SkyVigilance SafetyDB Training Platform",
+            }
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------- GET /api/cases/<id>/e2b — E2B(R3) XML download ----------
+@app.route("/api/cases/<case_id>/e2b", methods=["GET"])
+def export_e2b(case_id):
+    """
+    Generate and return an ICH E2B(R3) XML file for a single case.
+    The file is served as an attachment so the browser downloads it directly.
+
+    The sender configuration can be overridden via environment variables:
+      E2B_SENDER_ID    — EV sender identifier   (default: EVTESTWT)
+      E2B_RECEIVER_ID  — EV receiver identifier (default: EVTEST)
+      E2B_ORG_NAME     — Sending organisation name
+      E2B_CONTACT_EMAIL— Contact email in sender block
+    """
+    try:
+        case = Case.query.get(case_id)
+        if case is None:
+            return jsonify({"error": "Case not found"}), 404
+
+        # Build sender config from env vars (set on Render dashboard)
+        sender_cfg = {
+            "senderId":     os.getenv("E2B_SENDER_ID",     "EVTESTWT"),
+            "receiverId":   os.getenv("E2B_RECEIVER_ID",   "EVTEST"),
+            "orgName":      os.getenv("E2B_ORG_NAME",      "SkyVigilance Training Platform"),
+            "orgType":      os.getenv("E2B_ORG_TYPE",      "Pharmaceutical company"),
+            "contactFirst": os.getenv("E2B_CONTACT_FIRST", "Training"),
+            "contactLast":  os.getenv("E2B_CONTACT_LAST",  "Administrator"),
+            "contactEmail": os.getenv("E2B_CONTACT_EMAIL", "training@skyvigilance.example.com"),
+        }
+
+        xml_str = build_e2b_xml(case.to_dict(), sender_cfg=sender_cfg)
+
+        # Log the export in the audit trail
+        try:
+            log_event(
+                case_id      = case_id,
+                action_type  = "E2B_EXPORTED",
+                performed_by = request.args.get("user", "unknown"),
+                role         = request.args.get("role", "unknown"),
+                step_from    = case.current_step,
+                step_to      = case.current_step,
+                section      = "e2b_export",
+                details      = (
+                    f"E2B(R3) XML exported for case {case_id}. "
+                    f"Format: ICH E2B(R3) MCCI_IN200100UV01. "
+                    f"Sender: {sender_cfg['orgName']}."
+                ),
+            )
+            db.session.commit()
+        except Exception:
+            pass  # Audit failure must never block the export
+
+        filename = f"E2B_{case_id}.xml"
+        return Response(
+            xml_str,
+            mimetype="application/xml",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}",
+                "Content-Type": "application/xml; charset=utf-8",
+            }
+        )
+
+    except Exception as e:
+        return jsonify({"error": f"E2B export failed: {str(e)}"}), 500
+
+
 # ---------- GET /api/stats — quick training stats ----------
+
 @app.route("/api/stats")
 def get_stats():
     try:
