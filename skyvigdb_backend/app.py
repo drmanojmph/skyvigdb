@@ -7,12 +7,53 @@ import os
 
 app = Flask(__name__)
 
-db_url = os.getenv("DATABASE_URL", "sqlite:///local.db")
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+# ------------------------------------------------------------------
+# DATABASE CONFIGURATION
+# ------------------------------------------------------------------
+# Priority order for database URL:
+#
+#   1. TURSO_DATABASE_URL  — Turso (hosted libSQL / SQLite) — FREE FOREVER
+#      Format:  libsql+turso://TOKEN@YOUR-DB.turso.io
+#      Set this in Render → Environment Variables
+#
+#   2. DATABASE_URL        — Any PostgreSQL URL (e.g. Neon, Supabase)
+#      Kept as fallback so old Render PostgreSQL configs still work
+#
+#   3. sqlite:///local.db  — Local development only
+#      Works fine on your laptop; ephemeral on Render free tier
+#      (data is lost on every deploy / restart)
+#
+# HOW TO SET UP TURSO (one-time, 5 minutes):
+#   1. Go to https://turso.tech  →  Sign up free (no card needed)
+#   2. turso db create safetydb          (in their CLI or web UI)
+#   3. turso db tokens create safetydb   (copy the token)
+#   4. In Render dashboard → Environment → add:
+#        TURSO_DATABASE_URL = libsql+turso://TOKEN@safetydb-yourname.turso.io
+#   5. Deploy — done. Data persists forever.
+# ------------------------------------------------------------------
 
-app.config["SQLALCHEMY_DATABASE_URI"]     = db_url
+_turso_url  = os.getenv("TURSO_DATABASE_URL")   # Turso (preferred)
+_pg_url     = os.getenv("DATABASE_URL")          # PostgreSQL fallback
+
+if _turso_url:
+    # Turso / libSQL — requires:  pip install sqlalchemy-libsql
+    db_url = _turso_url
+elif _pg_url:
+    # Render / Neon / Supabase PostgreSQL
+    db_url = _pg_url.replace("postgres://", "postgresql://", 1)
+else:
+    # Local development — SQLite works perfectly here
+    db_url = "sqlite:///local.db"
+
+app.config["SQLALCHEMY_DATABASE_URI"]        = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# Turso needs slightly longer pool timeouts due to network latency
+if _turso_url:
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_pre_ping": True,
+        "pool_recycle":  280,
+    }
 
 db = SQLAlchemy(app)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
