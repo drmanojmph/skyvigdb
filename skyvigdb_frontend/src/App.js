@@ -987,13 +987,16 @@ export default function App() {
                     meddraQuery={meddraQuery} meddraResults={meddraResults}
                     meddraLoading={meddraLoading} meddraTarget={meddraTarget}
                     setMeddraTarget={setMeddraTarget}
-                    searchMeddra={searchMeddra} pickMeddra={pickMeddra}
-                    onClear={() => setH(i, "meddraPt", "")}
-                  />
-                </div>
-              ))}
-              <button onClick={() => setForm(f => ({ ...f, patient:{ ...f.patient, otherHistory:[...(f.patient?.otherHistory||[{}]),{}] }})}
-                className="text-indigo-600 text-sm font-semibold hover:underline">+ Add Row</button>
+                   searchMeddra={searchMeddra} pickMeddra={pickMeddra}
+  onClear={() => setH(i, "meddraPt", "")}
+/>
+</div>
+))}
+<button 
+  onClick={() => setForm(f => ({ ...f, patient:{ ...f.patient, otherHistory:[...(f.patient?.otherHistory||[{}]),{}] }}))}
+  className="text-indigo-600 text-sm font-semibold hover:underline">
+  + Add Row
+</button>
               
           <div className="mt-5 pt-4 border-t border-gray-200 flex justify-end">
             <button onClick={() => saveTab({ patient: form.patient }, "History")}
