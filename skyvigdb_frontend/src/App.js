@@ -677,9 +677,8 @@ const indicationText = (d?.indication || "—") + (d?.indicationPt ?
 
     // Other relevant history
     box(M, y, CW, 22); label("23. OTHER RELEVANT HISTORY (e.g. diagnostics, allergies, pregnancy, etc.):", M+1, y+4);
-    let histText = p.medHistory || "";
-    if (p.medHistoryPt) histText += "
-MedDRA PT: " + p.medHistoryPt + (p.medHistoryPtCode?" ("+p.medHistoryPtCode+")":"");
+   let histText = p.medHistory || "";
+if (p.medHistoryPt) histText += `\nMedDRA PT: ${p.medHistoryPt}${p.medHistoryPtCode ? ` (${p.medHistoryPtCode})` : ""}`;
     // Also pull otherHistory entries
     const ohEntries = (p.otherHistory||[]).filter(h=>h.description||h.meddraPt);
     if (ohEntries.length>0) histText += "
