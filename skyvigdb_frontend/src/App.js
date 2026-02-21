@@ -422,25 +422,6 @@ export default function App() {
         meddraHlt: m.hlt, meddraSoc: m.soc,
       };
       setForm(f => ({ ...f, patient: { ...f.patient, otherHistory } }));
-
-    } else if (target.section === "indication") {
-      const products = [...((form.products?.length) ? form.products : [{}])];
-      products[target.idx] = {
-        ...products[target.idx],
-        indicationPt: m.pt, indicationPtCode: m.pt_code,
-        indicationLlt: m.llt, indicationSoc: m.soc,
-      };
-      setForm(f => ({ ...f, products }));
-
-    } else if (target.section === "medHistory") {
-      setForm(f => ({
-        ...f,
-        patient: {
-          ...f.patient,
-          medHistoryPt: m.pt, medHistoryPtCode: m.pt_code,
-          medHistoryLlt: m.llt, medHistorySoc: m.soc,
-        }
-      }));
     }
 
     setMeddraResults([]);
@@ -511,245 +492,59 @@ export default function App() {
     setForm(f => ({ ...f, narrative: text }));
   };
 
-  /* ---- CIOMS I PDF — mirrors the official CIOMS I form layout ---- */
+  /* ---- CIOMS I PDF ---- */
   const exportCIOMS = () => {
-    const doc = new jsPDF({ unit: "mm", format: "a4" });
-    const PW = 210, PH = 297, M = 10, CW = PW - M * 2; // page dims, margins, content width
+    const doc = new jsPDF();
     const p  = form.patient  || {};
     const d  = (form.products||[{}])[0];
-    const ev = (form.events  ||[{}])[0];
+    const e  = (form.events  ||[{}])[0];
     const g  = form.general  || {};
     const m  = form.medical  || {};
     const t  = form.triage   || {};
 
-    const val  = (v) => String(v || "");
-    const bool = (v) => v ? "Yes" : "No";
-    const na   = (v) => v ? String(v) : "—";
+    doc.setFontSize(12); doc.setFont("helvetica","bold");
+    doc.text("CIOMS I Form – Individual Case Safety Report", 10, 15);
+    doc.setFont("helvetica","normal"); doc.setFontSize(9);
 
-    // ── Drawing helpers ──
-    const box = (x, y, w, h) => { doc.setDrawColor(100); doc.rect(x, y, w, h); };
-    const hdr = (text, x, y, w, h=5, fill="1a3a5c") => {
-      doc.setFillColor(fill === "1a3a5c" ? 26 : 240, fill === "1a3a5c" ? 58 : 240, fill === "1a3a5c" ? 92 : 240);
-      doc.rect(x, y, w, h, "F");
-      doc.setTextColor(fill === "1a3a5c" ? 255 : 40, fill === "1a3a5c" ? 255 : 40, fill === "1a3a5c" ? 255 : 40);
-      doc.setFont("helvetica","bold"); doc.setFontSize(7.5);
-      doc.text(text, x + 2, y + 3.5);
-      doc.setTextColor(0, 0, 0);
-    };
-    const label = (text, x, y) => {
-      doc.setFont("helvetica","bold"); doc.setFontSize(6.5);
-      doc.setTextColor(80, 80, 80); doc.text(text, x, y);
-      doc.setTextColor(0, 0, 0);
-    };
-    const field = (text, x, y, w, maxW) => {
-      doc.setFont("helvetica","normal"); doc.setFontSize(8);
-      const lines = doc.splitTextToSize(val(text), maxW || w - 2);
-      doc.text(lines, x + 1, y);
-    };
-    const chk = (checked, x, y) => {
-      box(x, y - 2.5, 3, 3);
-      if (checked) { doc.setFont("helvetica","bold"); doc.setFontSize(8); doc.text("X", x + 0.4, y); }
+    const row = (label, val, y) => {
+      doc.setFont("helvetica","bold"); doc.text(label+":", 10, y);
+      doc.setFont("helvetica","normal"); doc.text(String(val||"Not reported"), 65, y);
     };
 
-    let y = M;
+    row("Case Number",        selected.caseNumber,       28);
+    row("Receipt Date",       t.receiptDate,             35);
+    row("Country of Incidence",t.country,                42);
+    row("Report Type",        g.reportType||"Spontaneous",49);
+    row("Medically Confirmed",g.medConfirmed?"Yes":"No",  56);
+    row("Patient Initials",   t.patientInitials,         63);
+    row("Patient Age",        p.age ? p.age+" years" : "?", 70);
+    row("Patient Sex",        p.sex,                     77);
+    row("Weight",             p.weight ? p.weight+" kg" : "?", 84);
+    row("Suspect Drug",       d?.name,                   91);
+    row("Generic Name",       d?.genericName,            98);
+    row("Dose & Route",       (d?.dose||"?")+" / "+(d?.route||"?"), 105);
+    row("Indication",         d?.indication,             112);
+    row("Start Date",         d?.startDate,              119);
+    row("Action Taken",       d?.actionTaken,            126);
+    row("Dechallenge",        d?.dechallenge,            133);
+    row("Rechallenge",        d?.rechallenge,            140);
+    row("Event (Verbatim)",   e?.term,                   147);
+    row("MedDRA PT",          e?.pt,                     154);
+    row("MedDRA SOC",         e?.soc,                    161);
+    row("Onset Date",         e?.onsetDate,              168);
+    row("Outcome",            e?.outcome,                175);
+    row("Seriousness",        autoSerious()?"Serious":"Non-serious", 182);
+    row("Causality (WHO-UMC)",m?.causality,              189);
+    row("Listedness",         m?.listedness,             196);
 
-    // ══ TITLE ══
-    doc.setFillColor(26, 58, 92);
-    doc.rect(M, y, CW, 9, "F");
-    doc.setTextColor(255, 255, 255);
-    doc.setFont("helvetica","bold"); doc.setFontSize(11);
-    doc.text("CIOMS I FORM — SUSPECT ADVERSE REACTION REPORT", M + 2, y + 6);
-    doc.setTextColor(0, 0, 0);
-    y += 10;
+    doc.setFont("helvetica","bold"); doc.text("Narrative:", 10, 206);
+    doc.setFont("helvetica","normal");
+    const narLines = doc.splitTextToSize(form.narrative||"No narrative generated.", 185);
+    doc.text(narLines, 10, 213);
 
-    // Case number + training watermark
-    doc.setFont("helvetica","normal"); doc.setFontSize(7);
-    doc.setTextColor(120,120,120);
-    doc.text("Case No: " + na(selected?.caseNumber) + "   |   Generated: " + new Date().toLocaleDateString("en-GB") + "   |   SkyVigilance Training Platform", M, y + 3);
-    doc.setTextColor(0,0,0);
-    y += 6;
-
-    // ══ SECTION I: REACTION INFORMATION ══
-    hdr("I.  REACTION INFORMATION", M, y, CW);
-    y += 6;
-
-    // Row: Patient Initials | Country | DOB | Age | Sex
-    box(M, y, 38, 14); label("1. PATIENT INITIALS (first, last)", M+1, y+3.5); field(t.patientInitials, M+1, y+10, 36);
-    box(M+38, y, 40, 14); label("1a. COUNTRY", M+39, y+3.5); field(t.country, M+39, y+10, 38);
-    box(M+78, y, 30, 14); label("2. DATE OF BIRTH", M+79, y+3.5); field(p.dob||"—", M+79, y+10, 28);
-    box(M+108, y, 22, 14); label("2a. AGE", M+109, y+3.5); field(p.age ? p.age+" yrs" : "—", M+109, y+10, 20);
-    box(M+130, y, 60, 14); label("3. SEX", M+131, y+3.5);
-    chk(p.sex==="Male",   M+131, y+10); doc.setFontSize(7); doc.text("Male",   M+135, y+10);
-    chk(p.sex==="Female", M+146, y+10); doc.text("Female", M+150, y+10);
-    chk(!p.sex||p.sex==="Unknown", M+162, y+10); doc.text("Unknown", M+166, y+10);
-    y += 15;
-
-    // Row: Reaction onset | Outcome date
-    box(M, y, 95, 12); label("4-6. REACTION ONSET DATE (Day / Month / Year)", M+1, y+3.5);
-    const onsetParts = (ev.onsetDate||"").split("-");
-    const onsetStr = onsetParts.length===3 ? onsetParts[2]+"/"+onsetParts[1]+"/"+onsetParts[0] : na(ev.onsetDate);
-    field(onsetStr, M+1, y+10, 93);
-    box(M+95, y, 95, 12); label("7+13. REACTION STOP / RECOVERY DATE", M+96, y+3.5);
-    const stopParts = (ev.stopDate||"").split("-");
-    const stopStr = stopParts.length===3 ? stopParts[2]+"/"+stopParts[1]+"/"+stopParts[0] : "—";
-    field(stopStr, M+96, y+10, 93);
-    y += 13;
-
-    // Seriousness checkboxes
-    box(M, y, CW, 12); label("8-12. CHECK ALL APPROPRIATE TO ADVERSE REACTION:", M+1, y+4);
-    const ser = ev.seriousness || g.seriousness || {};
-    chk(ser.death||false,          M+1,   y+10); doc.setFontSize(6.5); doc.text("Patient Died",          M+5,   y+10);
-    chk(ser.hospitalisation||false,M+35,  y+10); doc.text("Involved/Prolonged Hospitalisation",          M+39,  y+10);
-    chk(ser.disability||false,     M+100, y+10); doc.text("Disability/Incapacity",                        M+104, y+10);
-    chk(ser.lifeThreatening||false,M+145, y+10); doc.text("Life Threatening",                              M+149, y+10);
-    y += 13;
-
-    // Reaction description (big box)
-    box(M, y, CW, 28); label("DESCRIBE REACTION(S) (including relevant tests/lab data):", M+1, y+4);
-    // Build reaction description text
-   let reactionText = "";
-if (ev.term) reactionText += `Verbatim: ${ev.term}\n`;
-if (ev.pt)   reactionText += `MedDRA PT: ${ev.pt}${ev.pt_code ? ` (${ev.pt_code})` : ""} | HLT: ${ev.hlt || "—"} | SOC: ${ev.soc || "—"}\n`;
-if (ev.outcome) reactionText += `Outcome: ${ev.outcome}\n`;
-    // Add lab data summary
-    const labs = form.patient?.labData || [];
-    if (labs.length > 0 && labs[0].testName) {
-      reactionText += "Lab: " + labs.filter(l=>l.testName).map(l => l.testName + " " + (l.result||"") + " " + (l.units||"") + (l.assessment?" ("+l.assessment+")":"")).join("; ");
-    }
-    const reactionLines = doc.splitTextToSize(reactionText || "—", CW - 4);
-    doc.setFont("helvetica","normal"); doc.setFontSize(8);
-    doc.text(reactionLines.slice(0,5), M+1, y+9);
-    y += 29;
-
-    // ══ SECTION II: SUSPECT DRUG(S) ══
-    hdr("II.  SUSPECT DRUG(S) INFORMATION", M, y, CW);
-    y += 6;
-
-    // Drug name + dose + route
-    box(M, y, 70, 12); label("14. SUSPECT DRUG(S) (include generic name)", M+1, y+3.5);
-    field((d?.name||"—") + (d?.genericName?" / "+d.genericName:""), M+1, y+10, 68);
-    box(M+70, y, 35, 12); label("15. DAILY DOSE(S)", M+71, y+3.5);
-    field((d?.dose||"—")+" "+(d?.doseUnit||""), M+71, y+10, 33);
-    box(M+105, y, 85, 12); label("16. ROUTE(S) OF ADMINISTRATION", M+106, y+3.5);
-    field(d?.route||"—", M+106, y+10, 83);
-    y += 13;
-
-   // Indication + therapy dates + duration
-box(M, y, 70, 12); 
-label("17. INDICATION(S) FOR USE", M+1, y+3.5);
-const indicationText = (d?.indication || "—") + (d?.indicationPt ? 
-  `\nMedDRA PT: ${d.indicationPt}${d.indicationPtCode ? ` (${d.indicationPtCode})` : ""}` : "");
-    const indLines = doc.splitTextToSize(indicationText, 68);
-    doc.setFont("helvetica","normal"); doc.setFontSize(8);
-    doc.text(indLines.slice(0,2), M+1, y+8);
-    box(M+70, y, 60, 12); label("18. THERAPY DATES (from/to)", M+71, y+3.5);
-    field((d?.startDate||"—")+" to "+(d?.stopDate||"—"), M+71, y+10, 58);
-    box(M+130, y, 60, 12); label("19. THERAPY DURATION", M+131, y+3.5);
-    field(d?.duration||"—", M+131, y+10, 58);
-    y += 13;
-
-    // Dechallenge + rechallenge
-    box(M, y, 95, 12); label("20. DID REACTION ABATE AFTER STOPPING DRUG?", M+1, y+3.5);
-    const dechPos = d?.dechallenge?.toLowerCase().includes("positive");
-    const dechNeg = d?.dechallenge?.toLowerCase().includes("negative");
-    chk(dechPos, M+1,  y+10); doc.setFontSize(7); doc.text("YES", M+5,  y+10);
-    chk(dechNeg, M+18, y+10); doc.text("NO",  M+22, y+10);
-    chk(!dechPos&&!dechNeg, M+35, y+10); doc.text("NA/NK", M+39, y+10);
-
-    box(M+95, y, 95, 12); label("21. DID REACTION REAPPEAR AFTER REINTRODUCTION?", M+96, y+3.5);
-    const rechPos = d?.rechallenge?.toLowerCase().includes("positive");
-    const rechNeg = d?.rechallenge?.toLowerCase().includes("negative");
-    chk(rechPos, M+96,  y+10); doc.text("YES", M+100, y+10);
-    chk(rechNeg, M+113, y+10); doc.text("NO",  M+117, y+10);
-    chk(!rechPos&&!rechNeg, M+130, y+10); doc.text("NA/NK", M+134, y+10);
-    y += 13;
-
-    // ══ SECTION III: CONCOMITANT DRUGS & HISTORY ══
-    hdr("III.  CONCOMITANT DRUG(S) AND HISTORY", M, y, CW);
-    y += 6;
-
-    // Concomitant drugs
-    box(M, y, CW, 18); label("22. CONCOMITANT DRUG(S) AND DATES OF ADMINISTRATION (exclude those used to treat reaction):", M+1, y+4);
-    const concomLines = doc.splitTextToSize(p.concomitant||"None reported", CW - 4);
-    doc.setFont("helvetica","normal"); doc.setFontSize(8);
-    doc.text(concomLines.slice(0,3), M+1, y+9);
-    y += 19;
-
-    // Other relevant history
-    box(M, y, CW, 22); label("23. OTHER RELEVANT HISTORY (e.g. diagnostics, allergies, pregnancy, etc.):", M+1, y+4);
-   let histText = p.medHistory || "";
-if (p.medHistoryPt) histText += `\nMedDRA PT: ${p.medHistoryPt}${p.medHistoryPtCode ? ` (${p.medHistoryPtCode})` : ""}`;
-    // Also pull otherHistory entries
-    const ohEntries = (p.otherHistory||[]).filter(h=>h.description||h.meddraPt);
-   if (ohEntries.length > 0) histText += `\nOther History: ${ohEntries.join("; ")}`;
-" + ohEntries.map(h=>(h.description||"")+(h.meddraPt?" [PT: "+h.meddraPt+"]":"")).join("; ");
-    const histLines = doc.splitTextToSize(histText||"None reported", CW - 4);
-    doc.text(histLines.slice(0,4), M+1, y+9);
-    y += 23;
-
-    // ══ SECTION IV: MANUFACTURER INFORMATION ══
-    hdr("IV.  MANUFACTURER INFORMATION", M, y, CW);
-    y += 6;
-
-    box(M, y, 90, 16); label("24a. NAME AND ADDRESS OF MANUFACTURER / MAH", M+1, y+3.5);
-    field((d?.mah||"SkyVigilance Training Platform") + "
-For training purposes only", M+1, y+9, 88);
-    box(M+90, y, 40, 16); label("24b. MFR CONTROL NO.", M+91, y+3.5);
-    field(selected?.caseNumber||"—", M+91, y+10, 38);
-    box(M+130, y, 60, 16); label("24c. DATE RECEIVED BY MANUFACTURER", M+131, y+3.5);
-    field(t.receiptDate||"—", M+131, y+10, 58);
-    y += 17;
-
-    // Report source + date + type
-    box(M, y, CW, 12); label("24d. REPORT SOURCE:", M+1, y+4);
-    const rtype = (t.reportType||g.reportType||"").toLowerCase();
-    chk(rtype.includes("stud"),    M+35,  y+9); doc.setFontSize(7); doc.text("STUDY",              M+39,  y+9);
-    chk(rtype.includes("lit"),     M+65,  y+9); doc.text("LITERATURE",                              M+69,  y+9);
-    chk(rtype.includes("spontan")||rtype.includes("health")||(!rtype.includes("stud")&&!rtype.includes("lit")),
-                                   M+100, y+9); doc.text("HEALTH PROFESSIONAL/SPONTANEOUS",         M+104, y+9);
-    y += 13;
-
-    box(M, y, 95, 10); label("DATE OF THIS REPORT:", M+1, y+3.5);
-    field(new Date().toLocaleDateString("en-GB"), M+1, y+8, 93);
-    box(M+95, y, 95, 10); label("25a. REPORT TYPE:", M+96, y+3.5);
-    const repType = (g.reportType||"Initial").toLowerCase();
-    chk(repType==="initial", M+96,  y+8); doc.setFontSize(7); doc.text("INITIAL",  M+100, y+8);
-    chk(repType.includes("follow"), M+125, y+8); doc.text("FOLLOWUP", M+129, y+8);
-    y += 12;
-
-    // ══ MEDICAL ASSESSMENT (extra section beyond standard CIOMS I) ══
-    if (m.causality || m.listedness || ev.pt) {
-      hdr("MEDICAL ASSESSMENT (SkyVigilance — supplementary to CIOMS I)", M, y, CW, 5, "gray");
-      y += 6;
-      box(M, y, 60, 10);  label("MedDRA PT (Event)", M+1, y+3.5);  field(ev.pt||"Not coded", M+1, y+8, 58);
-      box(M+60, y, 40, 10); label("PT Code", M+61, y+3.5);         field(ev.pt_code||"—", M+61, y+8, 38);
-      box(M+100, y, 40, 10); label("SOC", M+101, y+3.5);           field(ev.soc||"—", M+101, y+8, 38);
-      box(M+140, y, 50, 10); label("MedDRA Version", M+141, y+3.5);field("28.1", M+141, y+8, 48);
-      y += 11;
-      box(M, y, 60, 10);  label("WHO-UMC Causality", M+1, y+3.5);  field(m.causality||"Not assessed", M+1, y+8, 58);
-      box(M+60, y, 60, 10); label("Listedness", M+61, y+3.5);      field(m.listedness||"Not assessed", M+61, y+8, 58);
-      box(M+120, y, 70, 10); label("Seriousness", M+121, y+3.5);
-      field(autoSerious()?"SERIOUS":"Non-serious", M+121, y+8, 68);
-      y += 11;
-    }
-
-    // ══ NARRATIVE ══
-    if (form.narrative) {
-      hdr("CASE NARRATIVE", M, y, CW);
-      y += 6;
-      box(M, y, CW, Math.min(45, PH - y - 15));
-      const narLines = doc.splitTextToSize(form.narrative, CW - 4);
-      doc.setFont("helvetica","normal"); doc.setFontSize(8);
-      const maxNarLines = Math.floor((PH - y - 18) / 4.5);
-      doc.text(narLines.slice(0, maxNarLines), M+1, y+5);
-    }
-
-    // Footer
-    doc.setFont("helvetica","italic"); doc.setFontSize(6.5); doc.setTextColor(150,150,150);
-    doc.text("Generated by SkyVigilance Training Platform — For training purposes only — Not for regulatory submission", M, PH - 5);
-    doc.setTextColor(0,0,0);
-
-    doc.save("CIOMS_I_" + (selected?.caseNumber||"case") + ".pdf");
+    doc.setFontSize(7); doc.setTextColor(120);
+    doc.text("Generated by SkyVigilance Training Platform – For training purposes only", 10, 290);
+    doc.save(`CIOMS_${selected.caseNumber}.pdf`);
   };
 
   /* ---- DASHBOARD CHART ---- */
@@ -1128,16 +923,6 @@ For training purposes only", M+1, y+9, 88);
             <SectionHead>Medical Status</SectionHead>
             {F("Past Medical History", TA({ placeholder:"Relevant past conditions, surgeries, allergies...",
                 value:form.patient?.medHistory||"", onChange:e => setNested("patient","medHistory",e.target.value) }))}
-            <MedDRAWidget
-              targetSection="medHistory" targetIdx={0}
-              currentPt={form.patient?.medHistoryPt} currentPtCode={form.patient?.medHistoryPtCode}
-              currentLlt={form.patient?.medHistoryLlt} currentSoc={form.patient?.medHistorySoc}
-              meddraQuery={meddraQuery} meddraResults={meddraResults}
-              meddraLoading={meddraLoading} meddraTarget={meddraTarget}
-              setMeddraTarget={setMeddraTarget}
-              searchMeddra={searchMeddra} pickMeddra={pickMeddra}
-              onClear={() => setNested("patient","medHistoryPt","")}
-            />
             {F("Concomitant Medications", TA({ placeholder:"List all co-medications with doses...",
                 value:form.patient?.concomitant||"", onChange:e => setNested("patient","concomitant",e.target.value) }))}
 
@@ -1202,13 +987,16 @@ For training purposes only", M+1, y+9, 88);
                     meddraQuery={meddraQuery} meddraResults={meddraResults}
                     meddraLoading={meddraLoading} meddraTarget={meddraTarget}
                     setMeddraTarget={setMeddraTarget}
-                    searchMeddra={searchMeddra} pickMeddra={pickMeddra}
-                    onClear={() => setH(i, "meddraPt", "")}
-                  />
-                </div>
-              ))}
-              <button onClick={() => setForm(f => ({ ...f, patient:{ ...f.patient, otherHistory:[...(f.patient?.otherHistory||[{}]),{}] }})}
-                className="text-indigo-600 text-sm font-semibold hover:underline">+ Add Row</button>
+                   searchMeddra={searchMeddra} pickMeddra={pickMeddra}
+  onClear={() => setH(i, "meddraPt", "")}
+/>
+</div>
+))}
+<button 
+  onClick={() => setForm(f => ({ ...f, patient:{ ...f.patient, otherHistory:[...(f.patient?.otherHistory||[{}]),{}] }}))}
+  className="text-indigo-600 text-sm font-semibold hover:underline">
+  + Add Row
+</button>
               
           <div className="mt-5 pt-4 border-t border-gray-200 flex justify-end">
             <button onClick={() => saveTab({ patient: form.patient }, "History")}
@@ -1327,16 +1115,6 @@ For training purposes only", M+1, y+9, 88);
                     {F("Action Taken",             S(["Withdrawn","Dose reduced","Dose increased","Dose not changed","Unknown","Not applicable"],
                         { value:p.actionTaken||"", onChange:e => setP(i,"actionTaken",e.target.value) }))}
                   </div>
-                  <MedDRAWidget
-                    targetSection="indication" targetIdx={i}
-                    currentPt={p.indicationPt} currentPtCode={p.indicationPtCode}
-                    currentLlt={p.indicationLlt} currentSoc={p.indicationSoc}
-                    meddraQuery={meddraQuery} meddraResults={meddraResults}
-                    meddraLoading={meddraLoading} meddraTarget={meddraTarget}
-                    setMeddraTarget={setMeddraTarget}
-                    searchMeddra={searchMeddra} pickMeddra={pickMeddra}
-                    onClear={() => setP(i, "indicationPt", "")}
-                  />
 
                   <SectionHead>Challenge Information</SectionHead>
                   <div className="grid grid-cols-2 gap-3">
