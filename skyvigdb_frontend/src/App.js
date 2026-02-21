@@ -607,13 +607,10 @@ export default function App() {
     // Reaction description (big box)
     box(M, y, CW, 28); label("DESCRIBE REACTION(S) (including relevant tests/lab data):", M+1, y+4);
     // Build reaction description text
-    let reactionText = "";
-    if (ev.term) reactionText += "Verbatim: " + ev.term + "
-";
-    if (ev.pt)   reactionText += "MedDRA PT: " + ev.pt + (ev.pt_code?" ("+ev.pt_code+")":"") + " | HLT: " + (ev.hlt||"—") + " | SOC: " + (ev.soc||"—") + "
-";
-    if (ev.outcome) reactionText += "Outcome: " + ev.outcome + "
-";
+   let reactionText = "";
+if (ev.term) reactionText += `Verbatim: ${ev.term}\n`;
+if (ev.pt)   reactionText += `MedDRA PT: ${ev.pt}${ev.pt_code ? ` (${ev.pt_code})` : ""} | HLT: ${ev.hlt || "—"} | SOC: ${ev.soc || "—"}\n`;
+if (ev.outcome) reactionText += `Outcome: ${ev.outcome}\n`;
     // Add lab data summary
     const labs = form.patient?.labData || [];
     if (labs.length > 0 && labs[0].testName) {
