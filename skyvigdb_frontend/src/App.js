@@ -293,7 +293,10 @@ export default function App() {
       setForm({});
       fetchCases();
       flash("✅ Case booked-in successfully.");
-    } catch { flash("❌ Could not create case.", "error"); }
+    } catch (err) {
+      const msg = err?.response?.data?.error || "Could not create case — check backend connection.";
+      flash("❌ " + msg, "error");
+    }
   };
 
   /* ---- UPDATE (role-gated) ---- */
