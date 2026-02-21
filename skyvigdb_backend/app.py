@@ -19,7 +19,12 @@ if db_url.startswith("postgres://"):
 
 app.config["SQLALCHEMY_DATABASE_URI"]        = db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_ENGINE_OPTIONS"]      = {"pool_pre_ping": True}
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "pool_pre_ping":   True,      # Drop stale connections before use
+    "pool_recycle":    300,        # Recycle connections every 5 min (Neon idles at 5 min)
+    "pool_timeout":    30,         # Wait up to 30s for a connection from the pool
+    "connect_args":    {"connect_timeout": 30},  # 30s TCP connect timeout for Neon wake-up
+}
 
 db = SQLAlchemy(app)
 CORS(app, resources={r"/api/*": {"origins": "*"}})
@@ -178,6 +183,9 @@ class Case(db.Model):
       - narrative : Full case narrative (also stored in medical for convenience)
     """
 
+    # Use pv_case — 'case' is a PostgreSQL reserved word and causes silent failures
+    __tablename__ = "pv_case"
+
     id           = db.Column(db.String,   primary_key=True)
     created_at   = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at   = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -235,7 +243,7 @@ class AuditLog(db.Model):
     __tablename__ = "audit_log"
 
     id           = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    case_id      = db.Column(db.String, db.ForeignKey("case.id", ondelete="CASCADE"), nullable=False, index=True)
+    case_id      = db.Column(db.String, db.ForeignKey("pv_case.id", ondelete="CASCADE"), nullable=False, index=True)
     timestamp    = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     action_type  = db.Column(db.String(60), nullable=False)   # e.g. CASE_CREATED, TAB_SAVED, SUBMITTED
     performed_by = db.Column(db.String(80), nullable=False)   # username
@@ -315,10 +323,22 @@ class MeddraTerm(db.Model):
 def init_db():
     """
     Create any missing tables on startup. Never drops existing tables or data.
-    meddra_terms is populated by load_meddra.py and left untouched here.
+    Retries up to 5 times with backoff to handle Neon free-tier cold-start latency
+    (Neon pauses compute after 5 min inactivity; first connection can take 1-3 seconds).
     """
-    with app.app_context():
-        db.create_all()
+    import time
+    max_attempts = 5
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with app.app_context():
+                db.create_all()
+            print(f"[SkyVigilance] DB init OK (attempt {attempt})")
+            return
+        except Exception as e:
+            wait = attempt * 2
+            print(f"[SkyVigilance] DB init attempt {attempt} failed: {e}. Retrying in {wait}s...")
+            time.sleep(wait)
+    print("[SkyVigilance] WARNING: DB init failed after all retries. App may not function correctly.")
 
 init_db()
 
@@ -1201,7 +1221,9 @@ def create_case():
 
     except Exception as e:
         db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        print(f"[create_case ERROR] {traceback.format_exc()}")
+        return jsonify({"error": str(e), "detail": traceback.format_exc()}), 500
 
 
 # ---------- GET /api/cases/<id> — get single ----------
