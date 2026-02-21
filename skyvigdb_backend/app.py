@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, Response
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import or_, case as sa_case
 from sqlalchemy.orm.attributes import flag_modified
 from flask_cors import CORS
 from datetime import datetime
@@ -312,16 +313,11 @@ class MeddraTerm(db.Model):
 # =========================================================
 
 def init_db():
+    """
+    Create any missing tables on startup. Never drops existing tables or data.
+    meddra_terms is populated by load_meddra.py and left untouched here.
+    """
     with app.app_context():
-        try:
-            Case.query.first()
-        except Exception:
-            print("[SkyVigilance] Schema changed — recreating case/audit tables.")
-            # Drop only the application tables, never meddra_terms (loaded separately)
-            AuditLog.__table__.drop(db.engine, checkfirst=True)
-            Case.__table__.drop(db.engine, checkfirst=True)
-        # create_all is safe to call repeatedly — only creates missing tables.
-        # MeddraTerm table is created by load_meddra.py and left untouched here.
         db.create_all()
 
 init_db()
@@ -1609,7 +1605,7 @@ def search_meddra():
 
         pattern = f"%{q}%"
         query   = MeddraTerm.query.filter(
-            db.or_(
+            or_(
                 MeddraTerm.llt_name.ilike(pattern),
                 MeddraTerm.pt_name.ilike(pattern),
             )
@@ -1622,7 +1618,7 @@ def search_meddra():
         results = (
             query
             .order_by(
-                db.case(
+                sa_case(
                     (MeddraTerm.pt_name.ilike(f"{q}%"),  1),
                     (MeddraTerm.llt_name.ilike(f"{q}%"), 2),
                     else_=3
