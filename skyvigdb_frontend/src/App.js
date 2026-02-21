@@ -681,7 +681,7 @@ const indicationText = (d?.indication || "—") + (d?.indicationPt ?
 if (p.medHistoryPt) histText += `\nMedDRA PT: ${p.medHistoryPt}${p.medHistoryPtCode ? ` (${p.medHistoryPtCode})` : ""}`;
     // Also pull otherHistory entries
     const ohEntries = (p.otherHistory||[]).filter(h=>h.description||h.meddraPt);
-    if (ohEntries.length>0) histText += "
+   if (ohEntries.length > 0) histText += `\nOther History: ${ohEntries.join("; ")}`;
 " + ohEntries.map(h=>(h.description||"")+(h.meddraPt?" [PT: "+h.meddraPt+"]":"")).join("; ");
     const histLines = doc.splitTextToSize(histText||"None reported", CW - 4);
     doc.text(histLines.slice(0,4), M+1, y+9);
