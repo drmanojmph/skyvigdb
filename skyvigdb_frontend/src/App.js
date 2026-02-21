@@ -1217,9 +1217,11 @@ export default function App() {
                   />
                 </div>
               ))}
-              <button onClick={() => setForm(f => ({ ...f, patient:{ ...f.patient, otherHistory:[...(f.patient?.otherHistory||[{}]),{}] }})}
-                className="text-indigo-600 text-sm font-semibold hover:underline">+ Add Row</button>
-              
+              <button 
+  onClick={() => setForm(f => ({ ...f, patient:{ ...f.patient, otherHistory:[...(f.patient?.otherHistory||[{}]),{}] }}))}
+  className="text-indigo-600 text-sm font-semibold hover:underline">
+  + Add Row
+</button>
           <div className="mt-5 pt-4 border-t border-gray-200 flex justify-end">
             <button onClick={() => saveTab({ patient: form.patient }, "History")}
               className="bg-teal-600 hover:bg-teal-700 text-white text-xs px-5 py-2 rounded-lg font-semibold transition flex items-center gap-2">
