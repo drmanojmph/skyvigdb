@@ -634,10 +634,11 @@ if (ev.outcome) reactionText += `Outcome: ${ev.outcome}\n`;
     field(d?.route||"—", M+106, y+10, 83);
     y += 13;
 
-    // Indication + therapy dates + duration
-    box(M, y, 70, 12); label("17. INDICATION(S) FOR USE", M+1, y+3.5);
-    const indicationText = (d?.indication||"—") + (d?.indicationPt ? "
-MedDRA PT: "+d.indicationPt+(d.indicationPtCode?" ("+d.indicationPtCode+")":"") : "");
+   // Indication + therapy dates + duration
+box(M, y, 70, 12); 
+label("17. INDICATION(S) FOR USE", M+1, y+3.5);
+const indicationText = (d?.indication || "—") + (d?.indicationPt ? 
+  `\nMedDRA PT: ${d.indicationPt}${d.indicationPtCode ? ` (${d.indicationPtCode})` : ""}` : "");
     const indLines = doc.splitTextToSize(indicationText, 68);
     doc.setFont("helvetica","normal"); doc.setFontSize(8);
     doc.text(indLines.slice(0,2), M+1, y+8);
