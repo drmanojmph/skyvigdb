@@ -76,6 +76,79 @@ const SectionHead = ({children, color="indigo"}) => (
   <div className={`text-xs font-bold text-${color}-700 uppercase tracking-widest border-b border-${color}-200 pb-1 mb-3 mt-4`}>{children}</div>
 );
 
+/* ================= MEDDRA INLINE WIDGET ================= */
+// Renders a compact MedDRA search row for Data Entry tabs.
+// targetSection: 'event' | 'lab' | 'history'
+// targetIdx: row index within that array
+// currentPt / currentLlt: already-coded values to display (may be empty)
+const MedDRAWidget = ({ targetSection, targetIdx, currentPt, currentPtCode, currentLlt, currentSoc,
+                         meddraQuery, meddraResults, meddraLoading, meddraTarget, setMeddraTarget,
+                         searchMeddra, pickMeddra, onClear }) => {
+  const isActive = meddraTarget?.section === targetSection && meddraTarget?.idx === targetIdx;
+
+  return (
+    <div className="mt-2 mb-1">
+      {/* Coded term display */}
+      {currentPt ? (
+        <div className="flex items-center gap-2 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 text-xs mb-1">
+          <span className="text-purple-600 font-bold">MedDRA 28.1:</span>
+          <span className="font-semibold text-purple-900">{currentPt}</span>
+          {currentPtCode && <span className="text-purple-400">({currentPtCode})</span>}
+          {currentLlt && currentLlt !== currentPt && <span className="text-purple-500">← {currentLlt}</span>}
+          {currentSoc && <span className="text-gray-400 ml-1">· {currentSoc}</span>}
+          <button onClick={onClear} className="ml-auto text-purple-300 hover:text-red-400 text-xs font-bold">✕</button>
+        </div>
+      ) : null}
+
+      {/* Activate / search button */}
+      {!isActive ? (
+        <button
+          onClick={() => { setMeddraTarget({ section: targetSection, idx: targetIdx }); }}
+          className="text-xs text-purple-600 hover:text-purple-800 underline font-medium">
+          {currentPt ? "🔄 Recode with MedDRA" : "🔍 Code with MedDRA 28.1"}
+        </button>
+      ) : (
+        <div className="relative">
+          <input
+            autoFocus
+            className="border border-purple-300 rounded px-3 py-1.5 text-sm w-full pr-16 focus:outline-none focus:ring-2 focus:ring-purple-300"
+            placeholder="Type LLT or PT (2+ chars)…"
+            value={meddraQuery}
+            onChange={e => searchMeddra(e.target.value)}
+          />
+          <div className="absolute right-2 top-1.5 flex gap-2 items-center">
+            {meddraLoading && <span className="text-xs text-gray-400 animate-pulse">…</span>}
+            <button onClick={() => { setMeddraTarget(null); searchMeddra(""); }}
+              className="text-gray-400 hover:text-red-400 text-sm font-bold">✕</button>
+          </div>
+          {meddraResults.length > 0 && (
+            <div className="absolute z-30 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-xl mt-1 max-h-56 overflow-y-auto">
+              {meddraResults.map(m2 => (
+                <div key={m2.llt_code} onClick={() => pickMeddra(m2)}
+                  className="px-4 py-2.5 hover:bg-purple-50 cursor-pointer border-b last:border-0">
+                  <div className="font-semibold text-sm text-gray-800">
+                    {m2.pt} <span className="text-xs text-gray-400 font-normal">PT {m2.pt_code}</span>
+                  </div>
+                  <div className="text-xs text-gray-400 flex flex-wrap gap-x-3 mt-0.5">
+                    <span>LLT: {m2.llt}</span>
+                    <span>HLT: {m2.hlt}</span>
+                    <span className="text-purple-500">{m2.soc}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {!meddraLoading && meddraQuery.length >= 2 && meddraResults.length === 0 && (
+            <div className="absolute z-30 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-sm mt-1 px-4 py-3 text-sm text-gray-400">
+              No MedDRA 28.1 terms found for "{meddraQuery}"
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ================= MAIN APP ================= */
 export default function App() {
   const [user, setUser]               = useState(null);
@@ -91,6 +164,7 @@ export default function App() {
   const [auditLog, setAuditLog]       = useState([]);
   const [showAudit, setShowAudit]     = useState(false);
   const meddraDebounce                = useRef(null);
+  const [meddraTarget, setMeddraTarget] = useState(null); // {section:'event'|'lab'|'history', idx:number}
 
   useEffect(() => { if (user) { fetchCases(); axios.get(API + "/health").catch(() => {}); } }, [user]);
 
@@ -298,23 +372,58 @@ export default function App() {
   };
 
   const pickMeddra = (m) => {
-    const events = [...((form.events && form.events.length) ? form.events : [{}])];
-    events[0] = {
-      ...events[0],
-      llt:      m.llt,
-      llt_code: m.llt_code,
-      pt:       m.pt,
-      pt_code:  m.pt_code,
-      hlt:      m.hlt,
-      hlgt:     m.hlgt,
-      soc:      m.soc,
-      term:     events[0]?.term || m.llt,
-      meddra_version: m.version || "28.1",
-    };
-    setForm(f => ({ ...f, events }));
-    setMeddraQuery(m.pt);
+    const target = meddraTarget;
+
+    if (!target || target.section === "medical_event") {
+      // Medical Review — always codes events[0]
+      const events = [...((form.events && form.events.length) ? form.events : [{}])];
+      events[0] = {
+        ...events[0],
+        llt:      m.llt,      llt_code: m.llt_code,
+        pt:       m.pt,       pt_code:  m.pt_code,
+        hlt:      m.hlt,      hlgt:     m.hlgt,
+        soc:      m.soc,      meddra_version: m.version || "28.1",
+        term:     events[0]?.term || m.llt,
+      };
+      setForm(f => ({ ...f, events }));
+      setMeddraQuery(m.pt);
+
+    } else if (target.section === "event") {
+      const events = [...((form.events?.length) ? form.events : [{}])];
+      events[target.idx] = {
+        ...events[target.idx],
+        llt: m.llt, llt_code: m.llt_code,
+        pt:  m.pt,  pt_code:  m.pt_code,
+        hlt: m.hlt, hlgt: m.hlgt, soc: m.soc,
+        meddra_version: m.version || "28.1",
+        term: events[target.idx]?.term || m.llt,
+      };
+      setForm(f => ({ ...f, events }));
+
+    } else if (target.section === "lab") {
+      const labData = [...((form.patient?.labData?.length) ? form.patient.labData : [{}])];
+      labData[target.idx] = {
+        ...labData[target.idx],
+        meddraPt: m.pt, meddraPtCode: m.pt_code,
+        meddraLlt: m.llt, meddraLltCode: m.llt_code,
+        meddraHlt: m.hlt, meddraSoc: m.soc,
+      };
+      setForm(f => ({ ...f, patient: { ...f.patient, labData } }));
+
+    } else if (target.section === "history") {
+      const otherHistory = [...((form.patient?.otherHistory?.length) ? form.patient.otherHistory : [{}])];
+      otherHistory[target.idx] = {
+        ...otherHistory[target.idx],
+        meddraPt: m.pt, meddraPtCode: m.pt_code,
+        meddraLlt: m.llt, meddraLltCode: m.llt_code,
+        meddraHlt: m.hlt, meddraSoc: m.soc,
+      };
+      setForm(f => ({ ...f, patient: { ...f.patient, otherHistory } }));
+    }
+
     setMeddraResults([]);
     setMeddraLoading(false);
+    setMeddraTarget(null);
   };
 
   /* ---- AUTO SERIOUSNESS ---- */
@@ -868,9 +977,19 @@ export default function App() {
                     </div>
                   </div>
                   {F("Notes", I({ placeholder:"Additional notes...", value:h.notes||"", onChange:e => setH(i,"notes",e.target.value) }))}
+                  <MedDRAWidget
+                    targetSection="history" targetIdx={i}
+                    currentPt={h.meddraPt} currentPtCode={h.meddraPtCode}
+                    currentLlt={h.meddraLlt} currentSoc={h.meddraSoc}
+                    meddraQuery={meddraQuery} meddraResults={meddraResults}
+                    meddraLoading={meddraLoading} meddraTarget={meddraTarget}
+                    setMeddraTarget={setMeddraTarget}
+                    searchMeddra={searchMeddra} pickMeddra={pickMeddra}
+                    onClear={() => setH(i, "meddraPt", "")}
+                  />
                 </div>
               ))}
-              <button onClick={() => setForm(f => ({ ...f, patient:{ ...f.patient, otherHistory:[...(f.patient?.otherHistory||[{}]),{}] }}))}
+              <button onClick={() => setForm(f => ({ ...f, patient:{ ...f.patient, otherHistory:[...(f.patient?.otherHistory||[{}]),{}] }})}
                 className="text-indigo-600 text-sm font-semibold hover:underline">+ Add Row</button>
               
           <div className="mt-5 pt-4 border-t border-gray-200 flex justify-end">
@@ -911,6 +1030,16 @@ export default function App() {
                   </div>
                   {F("Assessment",   S(["Normal","Abnormal","Abnormal – Clinically Significant","Unknown"],
                       { value:l.assessment||"", onChange:e => setL(i,"assessment",e.target.value) }))}
+                  <MedDRAWidget
+                    targetSection="lab" targetIdx={i}
+                    currentPt={l.meddraPt} currentPtCode={l.meddraPtCode}
+                    currentLlt={l.meddraLlt} currentSoc={l.meddraSoc}
+                    meddraQuery={meddraQuery} meddraResults={meddraResults}
+                    meddraLoading={meddraLoading} meddraTarget={meddraTarget}
+                    setMeddraTarget={setMeddraTarget}
+                    searchMeddra={searchMeddra} pickMeddra={pickMeddra}
+                    onClear={() => setL(i, "meddraPt", "")}
+                  />
                 </div>
               ))}
               <button onClick={() => setForm(f => ({ ...f, patient:{ ...f.patient, labData:[...(f.patient?.labData||[{}]),{}] }}))}
@@ -1033,7 +1162,7 @@ export default function App() {
                 <div key={i} className="border border-gray-200 rounded-xl p-4 mb-4 bg-gray-50">
                   <div className="text-xs font-bold text-gray-500 uppercase mb-2">Event {i+1}</div>
 
-                  <SectionHead>Event Description</SectionHead>
+                  <SectionHead>Event Description &amp; MedDRA Coding</SectionHead>
                   <div className="grid grid-cols-2 gap-3">
                     {F("Description as Reported (Verbatim)", I({ placeholder:"Exact words used by reporter",
                         value:e.term||"", onChange:ev => setEv(i,"term",ev.target.value) }), true)}
@@ -1043,6 +1172,21 @@ export default function App() {
                   {F("Term Highlighted by Reporter", S(["Yes","No","Unknown"],
                       { value:e.highlighted||"", onChange:ev => setEv(i,"highlighted",ev.target.value) }),
                     false, "Was this event specifically emphasized by the reporter?")}
+                  <MedDRAWidget
+                    targetSection="event" targetIdx={i}
+                    currentPt={e.pt} currentPtCode={e.pt_code}
+                    currentLlt={e.llt} currentSoc={e.soc}
+                    meddraQuery={meddraQuery} meddraResults={meddraResults}
+                    meddraLoading={meddraLoading} meddraTarget={meddraTarget}
+                    setMeddraTarget={setMeddraTarget}
+                    searchMeddra={searchMeddra} pickMeddra={pickMeddra}
+                    onClear={() => setEv(i, "pt", "")}
+                  />
+                  {e.pt && IME_TERMS.includes(e.pt) && (
+                    <div className="bg-red-100 border border-red-400 text-red-800 text-xs px-3 py-2 rounded-lg font-semibold mb-1">
+                      ⚠️ IME term detected — this case MUST be classified as SERIOUS
+                    </div>
+                  )}
 
                   <SectionHead>Timing</SectionHead>
                   <div className="grid grid-cols-3 gap-3">
@@ -1181,6 +1325,7 @@ export default function App() {
             <input className="border border-gray-300 rounded px-3 py-2 text-sm w-full pr-8"
               placeholder="Search Preferred Term or LLT (type 2+ characters)..."
               value={meddraQuery}
+              onFocus={() => setMeddraTarget({ section: "medical_event", idx: 0 })}
               onChange={e => searchMeddra(e.target.value)} />
             {meddraLoading && (
               <div className="absolute right-3 top-2.5 text-gray-400 text-xs animate-pulse">searching…</div>
