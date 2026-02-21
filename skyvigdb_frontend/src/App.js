@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import jsPDF from "jspdf";
 import {
@@ -23,24 +23,9 @@ const USERS = [
   { username:"quality1",   password:"train123", role:"Quality",     step:4 }
 ];
 
-/* ================= MEDDRA SIMULATION ================= */
-const MEDDRA_DB = [
-  { llt:"Headache",              pt:"Headache",              hlt:"Headaches NEC",          soc:"Nervous system disorders" },
-  { llt:"Nausea",                pt:"Nausea",                hlt:"Nausea and vomiting",    soc:"Gastrointestinal disorders" },
-  { llt:"Skin rash",             pt:"Rash",                  hlt:"Rashes, eruptions and exanthems NEC", soc:"Skin and subcutaneous tissue disorders" },
-  { llt:"Pyrexia",               pt:"Fever",                 hlt:"Febrile disorders",      soc:"General disorders" },
-  { llt:"Vomiting",              pt:"Vomiting",              hlt:"Nausea and vomiting",    soc:"Gastrointestinal disorders" },
-  { llt:"Anaphylactic reaction", pt:"Anaphylaxis",           hlt:"Allergic conditions NEC",soc:"Immune system disorders" },
-  { llt:"Dizziness",             pt:"Dizziness",             hlt:"Vestibular disorders NEC",soc:"Nervous system disorders" },
-  { llt:"Breathlessness",        pt:"Dyspnoea",              hlt:"Respiratory disorders NEC",soc:"Respiratory disorders" },
-  { llt:"Itching skin",          pt:"Pruritus",              hlt:"Pruritis NEC",           soc:"Skin and subcutaneous tissue disorders" },
-  { llt:"Fatigue",               pt:"Fatigue",               hlt:"Asthenic conditions",    soc:"General disorders" },
-  { llt:"Liver function test abnormal", pt:"Hepatotoxicity",hlt:"Hepatic disorders NEC",  soc:"Hepatobiliary disorders" },
-  { llt:"QT prolongation",       pt:"QT prolongation",       hlt:"Cardiac arrhythmias NEC",soc:"Cardiac disorders" },
-  { llt:"Agranulocytosis",       pt:"Agranulocytosis",       hlt:"Bone marrow disorders",  soc:"Blood and lymphatic system disorders" },
-  { llt:"Stevens-Johnson syndrome",pt:"Stevens-Johnson syndrome",hlt:"Epidermal disorders",soc:"Skin and subcutaneous tissue disorders" },
-  { llt:"Seizure",               pt:"Seizure",               hlt:"Seizures NEC",           soc:"Nervous system disorders" },
-];
+/* ================= MEDDRA — backed by /api/meddra/search (MedDRA 28.1) ================= */
+// No local fallback array — all lookups hit the API. The debounce in searchMeddra()
+// keeps requests to one per 300 ms while the user is typing.
 
 const STAGES = [
   { name:"Triage",     step:1 },
@@ -101,11 +86,13 @@ export default function App() {
   const [tab, setTab]                 = useState("general");
   const [meddraQuery, setMeddraQuery] = useState("");
   const [meddraResults, setMeddraResults] = useState([]);
+  const [meddraLoading, setMeddraLoading] = useState(false);
   const [msg, setMsg]                 = useState(null);
   const [auditLog, setAuditLog]       = useState([]);
   const [showAudit, setShowAudit]     = useState(false);
+  const meddraDebounce                = useRef(null);
 
-  useEffect(() => { if (user) fetchCases(); }, [user]);
+  useEffect(() => { if (user) { fetchCases(); axios.get(API + "/health").catch(() => {}); } }, [user]);
 
   const fetchCases = async () => {
     try {
@@ -282,21 +269,52 @@ export default function App() {
     } catch { flash("❌ Save failed — check connection.", "error"); }
   };
 
-  /* ---- MEDDRA ---- */
+  /* ---- MEDDRA — API-backed search with 300 ms debounce ---- */
   const searchMeddra = (q) => {
     setMeddraQuery(q);
-    setMeddraResults(q.length > 1 ? MEDDRA_DB.filter(m =>
-      m.llt.toLowerCase().includes(q.toLowerCase()) ||
-      m.pt.toLowerCase().includes(q.toLowerCase())
-    ) : []);
+    if (meddraDebounce.current) clearTimeout(meddraDebounce.current);
+
+    if (q.length < 2) {
+      setMeddraResults([]);
+      setMeddraLoading(false);
+      return;
+    }
+
+    setMeddraLoading(true);
+
+    meddraDebounce.current = setTimeout(async () => {
+      try {
+        const res = await axios.get(API + "/meddra/search", {
+          params: { q, current: "true", limit: 20 }
+        });
+        setMeddraResults(res.data || []);
+      } catch {
+        setMeddraResults([]);
+        flash("MedDRA search unavailable — check backend connection.", "error");
+      } finally {
+        setMeddraLoading(false);
+      }
+    }, 300);
   };
 
   const pickMeddra = (m) => {
     const events = [...((form.events && form.events.length) ? form.events : [{}])];
-    events[0] = { ...events[0], llt:m.llt, pt:m.pt, hlt:m.hlt, soc:m.soc, term:events[0]?.term || m.llt };
+    events[0] = {
+      ...events[0],
+      llt:      m.llt,
+      llt_code: m.llt_code,
+      pt:       m.pt,
+      pt_code:  m.pt_code,
+      hlt:      m.hlt,
+      hlgt:     m.hlgt,
+      soc:      m.soc,
+      term:     events[0]?.term || m.llt,
+      meddra_version: m.version || "28.1",
+    };
     setForm(f => ({ ...f, events }));
     setMeddraQuery(m.pt);
     setMeddraResults([]);
+    setMeddraLoading(false);
   };
 
   /* ---- AUTO SERIOUSNESS ---- */
@@ -1158,41 +1176,53 @@ export default function App() {
 
         {/* MedDRA Coding */}
         <div>
-          <SectionHead color="purple">MedDRA Coding (Events Tab)</SectionHead>
+          <SectionHead color="purple">MedDRA Coding (Events Tab) — v28.1</SectionHead>
           <div className="relative mb-3">
-            <input className="border border-gray-300 rounded px-3 py-2 text-sm w-full"
-              placeholder="Search Preferred Term or LLT..."
+            <input className="border border-gray-300 rounded px-3 py-2 text-sm w-full pr-8"
+              placeholder="Search Preferred Term or LLT (type 2+ characters)..."
               value={meddraQuery}
               onChange={e => searchMeddra(e.target.value)} />
+            {meddraLoading && (
+              <div className="absolute right-3 top-2.5 text-gray-400 text-xs animate-pulse">searching…</div>
+            )}
             {meddraResults.length > 0 && (
-              <div className="absolute z-20 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-52 overflow-y-auto">
+              <div className="absolute z-20 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
                 {meddraResults.map(m2 => (
-                  <div key={m2.pt} onClick={() => pickMeddra(m2)}
-                    className="px-4 py-2 hover:bg-purple-50 cursor-pointer text-sm border-b last:border-0">
-                    <div className="font-semibold">{m2.pt}</div>
-                    <div className="text-xs text-gray-400 flex gap-4 mt-0.5">
-                      <span>LLT: {m2.llt}</span>
+                  <div key={m2.llt_code} onClick={() => pickMeddra(m2)}
+                    className="px-4 py-2.5 hover:bg-purple-50 cursor-pointer text-sm border-b last:border-0">
+                    <div className="font-semibold text-gray-800">
+                      {m2.pt}
+                      <span className="ml-2 text-xs text-gray-400 font-normal">PT {m2.pt_code}</span>
+                    </div>
+                    <div className="text-xs text-gray-400 flex flex-wrap gap-x-4 gap-y-0.5 mt-0.5">
+                      <span>LLT: {m2.llt} ({m2.llt_code})</span>
                       <span>HLT: {m2.hlt}</span>
-                      <span>SOC: {m2.soc}</span>
+                      <span className="text-purple-500 font-medium">SOC: {m2.soc}</span>
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+            {!meddraLoading && meddraQuery.length >= 2 && meddraResults.length === 0 && (
+              <div className="absolute z-20 top-full left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-sm mt-1 px-4 py-3 text-sm text-gray-400">
+                No terms found for "{meddraQuery}" in MedDRA 28.1
               </div>
             )}
           </div>
           {(form.events||[])[0]?.pt && (
             <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-xs space-y-1">
               <div className="flex justify-between">
-                <span className="font-bold text-purple-900">MedDRA Hierarchy</span>
+                <span className="font-bold text-purple-900">MedDRA 28.1 Hierarchy</span>
                 {IME_TERMS.includes((form.events)[0].pt) && (
                   <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold text-xs">⚠️ IME TERM</span>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-purple-800">
-                <span><b>LLT:</b> {(form.events)[0].llt}</span>
-                <span><b>PT:</b>  {(form.events)[0].pt}</span>
+                <span><b>LLT:</b> {(form.events)[0].llt} <span className="text-purple-400">({(form.events)[0].llt_code})</span></span>
+                <span><b>PT:</b>  {(form.events)[0].pt}  <span className="text-purple-400">({(form.events)[0].pt_code})</span></span>
                 <span><b>HLT:</b> {(form.events)[0].hlt}</span>
-                <span><b>SOC:</b> {(form.events)[0].soc}</span>
+                <span><b>HLGT:</b> {(form.events)[0].hlgt}</span>
+                <span className="col-span-2"><b>SOC:</b> {(form.events)[0].soc}</span>
               </div>
             </div>
           )}
