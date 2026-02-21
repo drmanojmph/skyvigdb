@@ -1629,7 +1629,7 @@ export default function App() {
                 { value:m.listedness||"", onChange:e => setNested("medical","listedness",e.target.value) }))}
             {F("Diagnosis / Symptom", S([{v:"D",l:"D – Diagnosis"},{v:"S",l:"S – Symptom/Sign"}],
                 { value:m.diagSymptom||"", onChange:e => setNested("medical","diagSymptom",e.target.value) }))}
-            {F("Causality as Reported", S(["Related","Possibly Related","Unlikely Related","Not Related","Unknown"],
+            {F("Company Causality", S(["Related","Possibly Related","Unlikely Related","Not Related","Unknown"],
                 { value:m.causalityReported||"", onChange:e => setNested("medical","causalityReported",e.target.value) }))}
             {F("Causality Method", S(["WHO-UMC","Naranjo","CIOMS","Other"],
                 { value:m.causalityMethod||"", onChange:e => setNested("medical","causalityMethod",e.target.value) }))}
