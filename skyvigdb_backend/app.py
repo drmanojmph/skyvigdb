@@ -54,7 +54,7 @@ OID_MSG_ID         = "2.16.840.1.113883.3.989.2.1.3.1"
 OID_WORLDWIDE_ID   = "2.16.840.1.113883.3.989.2.1.3.2"
 OID_INTERACTION    = "2.16.840.1.113883.1.6"
 OID_MEDDRA         = "2.16.840.1.113883.6.163"
-OID_MEDDRA_VER     = "27.1"
+OID_MEDDRA_VER     = "28.1"
 OID_ISO3166        = "1.0.3166.1.2.2"
 OID_ISO5218        = "1.0.5218"
 OID_RECEIVER_MSG   = "2.16.840.1.113883.3.989.2.1.3.12"
@@ -260,6 +260,54 @@ class AuditLog(db.Model):
 
 
 # =========================================================
+# MEDDRA TERM MODEL
+# =========================================================
+
+class MeddraTerm(db.Model):
+    """
+    MedDRA 28.1 English terminology — loaded from the official ASCII distribution.
+    Stores the full five-level hierarchy for each LLT so a single table lookup
+    returns everything the Events tab and E2B XML builder need.
+
+    Populated by load_meddra.py (run once against Neon, then re-run on each
+    new MedDRA release after re-extracting the ASCII files).
+    """
+
+    __tablename__ = "meddra_terms"
+
+    llt_code       = db.Column(db.String(8),   primary_key=True)
+    llt_name       = db.Column(db.String(500),  nullable=False)
+    pt_code        = db.Column(db.String(8))
+    pt_name        = db.Column(db.String(500))
+    hlt_code       = db.Column(db.String(8))
+    hlt_name       = db.Column(db.String(500))
+    hlgt_code      = db.Column(db.String(8))
+    hlgt_name      = db.Column(db.String(500))
+    soc_code       = db.Column(db.String(8))
+    soc_name       = db.Column(db.String(500))
+    soc_abbrev     = db.Column(db.String(10))
+    current_llt    = db.Column(db.String(1),   default="Y")
+    meddra_version = db.Column(db.String(10),  default="28.1")
+
+    def to_dict(self):
+        return {
+            "llt_code":   self.llt_code,
+            "llt":        self.llt_name,
+            "pt_code":    self.pt_code,
+            "pt":         self.pt_name,
+            "hlt_code":   self.hlt_code,
+            "hlt":        self.hlt_name,
+            "hlgt_code":  self.hlgt_code,
+            "hlgt":       self.hlgt_name,
+            "soc_code":   self.soc_code,
+            "soc":        self.soc_name,
+            "soc_abbrev": self.soc_abbrev,
+            "current":    self.current_llt,
+            "version":    self.meddra_version,
+        }
+
+
+# =========================================================
 # DB INIT (schema-safe)
 # =========================================================
 
@@ -268,12 +316,13 @@ def init_db():
         try:
             Case.query.first()
         except Exception:
-            print("[SkyVigilance] Schema changed — dropping and recreating tables.")
-            db.drop_all()
-            db.create_all()
-        else:
-            # create_all is safe to call repeatedly — only creates missing tables
-            db.create_all()
+            print("[SkyVigilance] Schema changed — recreating case/audit tables.")
+            # Drop only the application tables, never meddra_terms (loaded separately)
+            AuditLog.__table__.drop(db.engine, checkfirst=True)
+            Case.__table__.drop(db.engine, checkfirst=True)
+        # create_all is safe to call repeatedly — only creates missing tables.
+        # MeddraTerm table is created by load_meddra.py and left untouched here.
+        db.create_all()
 
 init_db()
 
@@ -819,7 +868,7 @@ def build_e2b_xml(case):
                            "codeSystemVersion": "2.0", "displayName": "indication"}, parent=ind_obs)
                 ind_val = E("value", {XSI_TYPE: "CE", "code": "10000001",
                                       "codeSystem": OID["meddra"],
-                                      "codeSystemVersion": "27.0"}, parent=ind_obs)
+                                      "codeSystemVersion": "28.1"}, parent=ind_obs)
                 E("originalText", parent=ind_val, text=drug["indication"])
 
             # ── Action taken (B.4.k.7) ──
@@ -884,11 +933,11 @@ def build_e2b_xml(case):
             if evt.get("stopDate"):  E("high", {"value": d(evt["stopDate"])},  parent=eff)
 
         # Reaction term — MedDRA PT (B.2.i.2.1a) + verbatim (B.2.i.1.1a)
-        meddra_code = evt.get("meddraCode", "10000001")
+        meddra_code = evt.get("pt_code") or evt.get("meddraCode", "10000001")
         r_val = E("value", {XSI_TYPE: "CE",
                              "code":              meddra_code,
                              "codeSystem":        OID["meddra"],
-                             "codeSystemVersion": "27.0"}, parent=r_obs)
+                             "codeSystemVersion": "28.1"}, parent=r_obs)
         # Verbatim original term
         if evt.get("term"):
             E("originalText", {"language": "eng"}, text=evt["term"], parent=r_val)
@@ -1417,47 +1466,10 @@ def delete_all_cases():
         return jsonify({"error": str(e)}), 500
 
 
-# ---------- GET /api/cases/<id>/e2b — generate E2B R3 ICH XML ----------
-@app.route("/api/cases/<case_id>/e2b", methods=["GET"])
-def generate_e2b(case_id):
-    """
-    Returns a fully-formed ICH E2B(R3) ICHICSR XML for the given case.
-    Available from Step 3 (Medical Review) onward, once MedDRA coding is present.
-
-    The XML conforms to:
-      - ICH guideline E2B(R3) - Individual Case Safety Report
-      - HL7 v3 MCCI_IN200100UV01 / PORR_IN049016UV message structure
-      - EudraVigilance / EVWEB interchange format
-      - FDA FAERS E2B(R3) submission requirements
-
-    Returned as application/xml with Content-Disposition for browser download.
-    """
-    try:
-        case = Case.query.get(case_id)
-        if case is None:
-            return jsonify({"error": "Case not found"}), 404
-
-        if case.current_step < 3:
-            return jsonify({
-                "error": "E2B R3 XML is only available from Medical Review (Step 3) onward.",
-                "hint": "Complete MedDRA coding in Medical Review before generating E2B XML."
-            }), 422
-
-        xml_str = build_e2b_xml(case)
-
-        from flask import Response
-        return Response(
-            xml_str,
-            mimetype="application/xml",
-            headers={
-                "Content-Disposition": f'attachment; filename="E2B_{case_id}.xml"',
-                "X-E2B-Standard":     "ICH E2B(R3)",
-                "X-Message-Type":     "MCCI_IN200100UV01",
-                "X-Case-ID":          case_id,
-            }
-        )
-    except Exception as e:
-        return jsonify({"error": f"XML generation failed: {str(e)}"}), 500
+# ---------- GET /api/cases/<id>/e2b — E2B(R3) XML download ----------
+# NOTE: Single consolidated handler below (export_e2b). Previous duplicate
+# stubs have been removed. Flask only honours the first registered route
+# for a given URL+method, so having multiple was silently ignoring the others.
 
 
 # ---------- GET /api/cases/<id>/audit — full audit trail for one case ----------
@@ -1498,23 +1510,21 @@ def get_all_audit():
         return jsonify({"error": str(e)}), 500
 
 
-# ---------- GET /api/cases/<id>/e2b — E2B R3 XML download ----------
+# (removed duplicate get_case_e2b handler — see export_e2b below)
+
+
+# ---------- GET /api/cases/<id>/e2b — E2B(R3) XML download (consolidated) ----------
 @app.route("/api/cases/<case_id>/e2b", methods=["GET"])
-def get_case_e2b(case_id):
+def export_e2b(case_id):
     """
     Generate and return an ICH E2B(R3) XML file for a single case.
+    The file is served as an attachment so the browser downloads it directly.
 
-    The response is delivered as an attachment download so the browser
-    saves it directly as PV-XXXXX.xml — matching the behaviour of
-    EudraVigilance Gateway and FDA FAERS E2B submission workflows.
-
-    Available from any workflow step (step 1+). Data completeness
-    improves as the case moves through Triage → Data Entry → Medical.
-
-    Regulatory references:
-      ICH E2B(R3) Implementation Guide v5.0
-      EU GVP Module VI — Management and Reporting of ICSRs
-      FDA 21 CFR 314.81 / 21 CFR 600.80
+    MedDRA version: 28.1 (English)
+    XML standard:   ICH E2B(R3) — MCCI_IN200100UV01 / PORR_IN049016UV
+    Regulatory ref: ICH E2B(R3) Implementation Guide v5.0
+                    EU GVP Module VI
+                    FDA 21 CFR 314.81 / 21 CFR 600.80
     """
     try:
         case = Case.query.get(case_id)
@@ -1522,53 +1532,6 @@ def get_case_e2b(case_id):
             return jsonify({"error": "Case not found"}), 404
 
         xml_str = build_e2b_xml(case)
-        filename = f"E2B_{case_id}.xml"
-
-        return Response(
-            xml_str,
-            mimetype="application/xml",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}",
-                "Content-Type":        "application/xml; charset=utf-8",
-                "X-E2B-Standard":      "ICH E2B(R3)",
-                "X-Case-ID":           case_id,
-                "X-Generated-By":      "SkyVigilance SafetyDB Training Platform",
-            }
-        )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# ---------- GET /api/cases/<id>/e2b — E2B(R3) XML download ----------
-@app.route("/api/cases/<case_id>/e2b", methods=["GET"])
-def export_e2b(case_id):
-    """
-    Generate and return an ICH E2B(R3) XML file for a single case.
-    The file is served as an attachment so the browser downloads it directly.
-
-    The sender configuration can be overridden via environment variables:
-      E2B_SENDER_ID    — EV sender identifier   (default: EVTESTWT)
-      E2B_RECEIVER_ID  — EV receiver identifier (default: EVTEST)
-      E2B_ORG_NAME     — Sending organisation name
-      E2B_CONTACT_EMAIL— Contact email in sender block
-    """
-    try:
-        case = Case.query.get(case_id)
-        if case is None:
-            return jsonify({"error": "Case not found"}), 404
-
-        # Build sender config from env vars (set on Render dashboard)
-        sender_cfg = {
-            "senderId":     os.getenv("E2B_SENDER_ID",     "EVTESTWT"),
-            "receiverId":   os.getenv("E2B_RECEIVER_ID",   "EVTEST"),
-            "orgName":      os.getenv("E2B_ORG_NAME",      "SkyVigilance Training Platform"),
-            "orgType":      os.getenv("E2B_ORG_TYPE",      "Pharmaceutical company"),
-            "contactFirst": os.getenv("E2B_CONTACT_FIRST", "Training"),
-            "contactLast":  os.getenv("E2B_CONTACT_LAST",  "Administrator"),
-            "contactEmail": os.getenv("E2B_CONTACT_EMAIL", "training@skyvigilance.example.com"),
-        }
-
-        xml_str = build_e2b_xml(case.to_dict(), sender_cfg=sender_cfg)
 
         # Log the export in the audit trail
         try:
@@ -1582,8 +1545,8 @@ def export_e2b(case_id):
                 section      = "e2b_export",
                 details      = (
                     f"E2B(R3) XML exported for case {case_id}. "
-                    f"Format: ICH E2B(R3) MCCI_IN200100UV01. "
-                    f"Sender: {sender_cfg['orgName']}."
+                    f"Standard: ICH E2B(R3) MCCI_IN200100UV01. "
+                    f"MedDRA version: 28.1."
                 ),
             )
             db.session.commit()
@@ -1596,12 +1559,105 @@ def export_e2b(case_id):
             mimetype="application/xml",
             headers={
                 "Content-Disposition": f"attachment; filename={filename}",
-                "Content-Type": "application/xml; charset=utf-8",
+                "Content-Type":        "application/xml; charset=utf-8",
+                "X-E2B-Standard":      "ICH E2B(R3)",
+                "X-MedDRA-Version":    "28.1",
+                "X-Case-ID":           case_id,
+                "X-Generated-By":      "SkyVigilance SafetyDB Training Platform",
             }
         )
 
     except Exception as e:
         return jsonify({"error": f"E2B export failed: {str(e)}"}), 500
+
+
+# ---------- GET /api/meddra/search — real-time term search ----------
+@app.route("/api/meddra/search", methods=["GET"])
+def search_meddra():
+    """
+    Full-text search across MedDRA 28.1 LLT and PT names.
+
+    Query params:
+      q          — search string (required, min 2 chars)
+      current    — "true" (default) | "false" — filter to current LLTs only
+      limit      — max results to return (default 20, max 50)
+
+    Returns a JSON array of term objects with the full five-level hierarchy.
+    Uses PostgreSQL ILIKE for broad compatibility (GIN index created by
+    load_meddra.py will accelerate this automatically on Neon).
+
+    Example:
+      GET /api/meddra/search?q=headache
+      GET /api/meddra/search?q=stevens&current=true&limit=10
+    """
+    try:
+        q       = (request.args.get("q") or "").strip()
+        current = request.args.get("current", "true").lower() != "false"
+        limit   = min(int(request.args.get("limit", 20)), 50)
+
+        if len(q) < 2:
+            return jsonify([])
+
+        # Check the table actually exists (it won't exist until load_meddra.py is run)
+        try:
+            MeddraTerm.query.limit(1).all()
+        except Exception:
+            return jsonify({
+                "error": "MedDRA table not yet loaded.",
+                "hint":  "Run load_meddra.py against your Neon database to populate meddra_terms."
+            }), 503
+
+        pattern = f"%{q}%"
+        query   = MeddraTerm.query.filter(
+            db.or_(
+                MeddraTerm.llt_name.ilike(pattern),
+                MeddraTerm.pt_name.ilike(pattern),
+            )
+        )
+
+        if current:
+            query = query.filter(MeddraTerm.current_llt == "Y")
+
+        # Boost exact PT prefix matches to the top, then LLT prefix, then all others
+        results = (
+            query
+            .order_by(
+                db.case(
+                    (MeddraTerm.pt_name.ilike(f"{q}%"),  1),
+                    (MeddraTerm.llt_name.ilike(f"{q}%"), 2),
+                    else_=3
+                ),
+                MeddraTerm.pt_name
+            )
+            .limit(limit)
+            .all()
+        )
+
+        return jsonify([t.to_dict() for t in results])
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------- GET /api/meddra/pt/<code> — fetch full hierarchy for a PT code ----------
+@app.route("/api/meddra/pt/<pt_code>", methods=["GET"])
+def get_meddra_pt(pt_code):
+    """
+    Returns the first current LLT for a given PT code, with full hierarchy.
+    Used by the E2B XML builder and the Medical Review coding panel to resolve
+    a stored PT code back to its display names.
+    """
+    try:
+        term = (
+            MeddraTerm.query
+            .filter_by(pt_code=pt_code, current_llt="Y")
+            .first()
+        )
+        if term is None:
+            return jsonify({"error": f"PT code {pt_code} not found in MedDRA 28.1"}), 404
+        return jsonify(term.to_dict())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ---------- GET /api/stats — quick training stats ----------
