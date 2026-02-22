@@ -301,35 +301,41 @@ class AuditLog(db.Model):
 
     def to_dict(self):
         ts = self.timestamp
-        if ts is None:
-            ts_display = ""
-        elif isinstance(ts, datetime):
-            ts_display = ts.strftime("%d %b %Y, %H:%M")
-        else:
-            # Driver returned a string — strip timezone noise and reformat
-            raw = str(ts).replace("T", " ").replace("+00:00", "").replace("Z", "").strip()
-            # Try to reformat YYYY-MM-DD HH:MM to DD Mon YYYY, HH:MM
-            import re as _re
-            m = _re.match(r"^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})", raw)
-            if m:
-                months = ["Jan","Feb","Mar","Apr","May","Jun",
-                          "Jul","Aug","Sep","Oct","Nov","Dec"]
-                ts_display = f"{m.group(3)} {months[int(m.group(2))-1]} {m.group(1)}, {m.group(4)}"
-            else:
-                ts_display = raw[:16]
+        # Treat anything that isn't a real datetime as corrupt — use now as fallback
+        if not isinstance(ts, datetime):
+            try:
+                # Attempt to parse a string the driver may have returned
+                raw = str(ts).strip()
+                # Reject obvious garbage values including literal "Invalid Date"
+                if not raw or raw.lower() in ("none", "null", "invalid date", "nat"):
+                    raise ValueError
+                # Parse YYYY-MM-DD HH:MM or YYYY-MM-DDTHH:MM
+                from datetime import datetime as _dt
+                for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S",
+                            "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S",
+                            "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M"):
+                    try:
+                        ts = _dt.strptime(raw[:26], fmt); break
+                    except ValueError:
+                        continue
+                else:
+                    raise ValueError
+            except Exception:
+                ts = datetime.utcnow()
+
+        ts_display = ts.strftime("%d %b %Y, %H:%M")
         return {
             "id":          self.id,
             "caseId":      self.case_id,
-            # Both field names — covers old and new frontend builds
             "timestamp":   ts_display,
             "performedAt": ts_display,
             "actionType":  self.action_type,
-            "action":      self.action_type,   # alias for old frontend
+            "action":      self.action_type,
             "performedBy": self.performed_by,
             "role":        self.role,
             "stepFrom":    self.step_from,
             "stepTo":      self.step_to,
-            "step":        self.step_to,       # alias for old frontend
+            "step":        self.step_to,
             "section":     self.section,
             "details":     self.details,
         }
@@ -406,6 +412,24 @@ def init_db():
 init_db()
 
 
+def _repair_audit_on_startup():
+    """Fix any NULL or corrupt audit timestamps left over from earlier builds."""
+    try:
+        with app.app_context():
+            fixed = 0
+            for e in AuditLog.query.all():
+                if e.timestamp is None or not isinstance(e.timestamp, datetime):
+                    e.timestamp = datetime.utcnow()
+                    fixed += 1
+            if fixed:
+                db.session.commit()
+                print(f"[SkyVigilance] Repaired {fixed} corrupt audit timestamp(s).")
+    except Exception as ex:
+        print(f"[SkyVigilance] Audit repair skipped: {ex}")
+
+_repair_audit_on_startup()
+
+
 # =========================================================
 # HELPERS
 # =========================================================
@@ -430,6 +454,7 @@ def log_event(case_id, action_type, performed_by, role,
     try:
         entry = AuditLog(
             case_id      = case_id,
+            timestamp    = datetime.utcnow(),   # explicit — never rely on column default
             action_type  = action_type,
             performed_by = performed_by,
             role         = role,
@@ -1404,6 +1429,32 @@ def get_all_audit():
         return jsonify([e.to_dict() for e in entries])
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+
+# =========================================================
+# AUDIT REPAIR — fixes corrupt timestamps in existing rows
+# =========================================================
+
+@app.route("/api/audit/repair", methods=["POST"])
+def repair_audit_timestamps():
+    """One-time fix: sets a valid timestamp on any audit row that has NULL
+    or a non-datetime value stored (e.g. literal 'Invalid Date').
+    Safe to call multiple times."""
+    try:
+        from sqlalchemy import text
+        fixed = 0
+        entries = AuditLog.query.all()
+        for e in entries:
+            if e.timestamp is None or not isinstance(e.timestamp, datetime):
+                e.timestamp = datetime.utcnow()
+                fixed += 1
+        if fixed:
+            db.session.commit()
+        return jsonify({"fixed": fixed, "message": f"Repaired {fixed} audit row(s)."})
+    except Exception as ex:
+        db.session.rollback()
+        return jsonify({"error": str(ex)}), 500
 
 
 # =========================================================
