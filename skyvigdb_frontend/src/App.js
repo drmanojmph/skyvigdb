@@ -13,15 +13,31 @@ const IME_TERMS = [
 ];
 
 const USERS = [
-  { username:"triage1",    password:"train123", role:"Triage",    step:1 },
-  { username:"dataentry1", password:"train123", role:"Data Entry", step:2 },
-  { username:"medical1",   password:"train123", role:"Medical",    step:3 },
-  { username:"quality1",   password:"train123", role:"Quality",    step:4 }
+  { username:"triage1",      password:"train123", role:"Triage",       step:1 },
+  { username:"dataentry1",   password:"train123", role:"Data Entry",   step:2 },
+  { username:"medical1",     password:"train123", role:"Medical",      step:3 },
+  { username:"quality1",     password:"train123", role:"Quality",      step:4 },
+  { username:"submissions1", password:"train123", role:"Submissions",  step:5 },
+  { username:"archival1",    password:"train123", role:"Archival",     step:6 }
 ];
 
 const STAGES = [
-  { name:"Triage",    step:1 }, { name:"Data Entry", step:2 },
-  { name:"Medical",   step:3 }, { name:"Quality",    step:4 }, { name:"Approved", step:5 }
+  { name:"Triage",      step:1 }, { name:"Data Entry",  step:2 },
+  { name:"Medical",     step:3 }, { name:"Quality",     step:4 },
+  { name:"Submissions", step:5 }, { name:"Archived",    step:6 }
+];
+
+const AGENCIES = [
+  { id:"fda",    label:"FDA",           country:"United States",  portal:"https://www.accessdata.fda.gov/scripts/foi/SpringFOI/FOIFullTextSearchAction.do" },
+  { id:"ema",    label:"EMA",           country:"European Union", portal:"https://eudravigilance.ema.europa.eu" },
+  { id:"mhra",   label:"MHRA",          country:"United Kingdom", portal:"https://yellowcard.mhra.gov.uk" },
+  { id:"tga",    label:"TGA",           country:"Australia",      portal:"https://www.tga.gov.au/reporting-adverse-events" },
+  { id:"hc",     label:"Health Canada", country:"Canada",         portal:"https://www.canada.ca/en/health-canada/services/drugs-health-products/medeffect-canada.html" },
+  { id:"dcgi",   label:"DCGI",          country:"India",          portal:"https://cdsco.gov.in/opencms/opencms/en/pharmacovigilance/" },
+  { id:"pmda",   label:"PMDA",          country:"Japan",          portal:"https://www.pmda.go.jp/english" },
+  { id:"anvisa", label:"ANVISA",        country:"Brazil",         portal:"https://www.gov.br/anvisa" },
+  { id:"sfda",   label:"SFDA",          country:"Saudi Arabia",   portal:"https://www.sfda.gov.sa" },
+  { id:"other",  label:"Other",         country:"",               portal:"" },
 ];
 
 const F = (label, el, required=false, hint="") => (
@@ -1562,15 +1578,311 @@ export default function App() {
     </div>
   );
 
+  /* ---- STEP 5: SUBMISSIONS ---- */
+  const SubmissionsForm = () => {
+    const sub = form.submissions || {};
+    const selected_agencies = sub.agencies || {};
+
+    const toggleAgency = (id) => {
+      setForm(f => ({
+        ...f,
+        submissions: {
+          ...f.submissions,
+          agencies: {
+            ...(f.submissions?.agencies || {}),
+            [id]: {
+              ...(f.submissions?.agencies?.[id] || {}),
+              selected: !(f.submissions?.agencies?.[id]?.selected),
+            }
+          }
+        }
+      }));
+    };
+
+    const setAgencyField = (id, key, val2) => {
+      setForm(f => ({
+        ...f,
+        submissions: {
+          ...f.submissions,
+          agencies: {
+            ...(f.submissions?.agencies || {}),
+            [id]: { ...(f.submissions?.agencies?.[id] || {}), [key]: val2 }
+          }
+        }
+      }));
+    };
+
+    const selectedCount = AGENCIES.filter(a => selected_agencies[a.id]?.selected).length;
+    const submittedCount = AGENCIES.filter(a => selected_agencies[a.id]?.selected && selected_agencies[a.id]?.submittedDate).length;
+
+    return (
+      <div className="space-y-5">
+        <div className="bg-violet-50 border border-violet-200 rounded-xl p-4">
+          <div className="text-xs font-bold text-violet-700 uppercase tracking-widest mb-1">Regulatory Submissions</div>
+          <p className="text-xs text-gray-500">
+            Select the regulatory agencies this case must be submitted to and record submission dates. Cases with all selected agencies submitted will advance to archival.
+          </p>
+          {selectedCount > 0 && (
+            <div className="mt-2 flex gap-3 text-xs">
+              <span className="bg-violet-100 text-violet-800 px-2 py-0.5 rounded-full font-semibold">{selectedCount} agencies selected</span>
+              <span className={`px-2 py-0.5 rounded-full font-semibold ${submittedCount === selectedCount ? "bg-green-100 text-green-800" : "bg-amber-100 text-amber-800"}`}>
+                {submittedCount}/{selectedCount} submitted
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Progress bar */}
+        {selectedCount > 0 && (
+          <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-green-500 rounded-full transition-all"
+              style={{ width: `${(submittedCount / selectedCount) * 100}%` }}
+            />
+          </div>
+        )}
+
+        {/* Agency cards */}
+        <div className="space-y-3">
+          {AGENCIES.map(agency => {
+            const ag = selected_agencies[agency.id] || {};
+            const isSelected = !!ag.selected;
+            const isSubmitted = isSelected && !!ag.submittedDate;
+            return (
+              <div key={agency.id}
+                className={`border-2 rounded-xl transition-all ${
+                  isSubmitted  ? "border-green-400 bg-green-50" :
+                  isSelected   ? "border-violet-400 bg-violet-50" :
+                                 "border-gray-200 bg-white"}`}>
+                {/* Agency header row */}
+                <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => toggleAgency(agency.id)}>
+                  <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all
+                    ${isSelected ? "bg-violet-600 border-violet-600" : "border-gray-300 bg-white"}`}>
+                    {isSelected && <span className="text-white text-xs font-bold">✓</span>}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className={`font-bold text-sm ${isSelected ? "text-violet-900" : "text-gray-700"}`}>{agency.label}</span>
+                      {agency.country && <span className="text-xs text-gray-400">{agency.country}</span>}
+                      {isSubmitted && (
+                        <span className="text-xs bg-green-200 text-green-800 px-2 py-0.5 rounded-full font-semibold ml-auto">✅ Submitted</span>
+                      )}
+                      {isSelected && !isSubmitted && (
+                        <span className="text-xs bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-semibold ml-auto">⏳ Pending</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Expanded fields when selected */}
+                {isSelected && (
+                  <div className="px-4 pb-4 border-t border-gray-100 pt-3">
+                    <div className="grid grid-cols-3 gap-3 mb-2">
+                      {F("Submission Date *",
+                        <input type="date" className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                          value={ag.submittedDate||""} onChange={e => setAgencyField(agency.id,"submittedDate",e.target.value)} />
+                      )}
+                      {F("Due Date (expedited)",
+                        <input type="date" className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                          value={ag.dueDate||""} onChange={e => setAgencyField(agency.id,"dueDate",e.target.value)} />
+                      )}
+                      {F("Acknowledgement Date",
+                        <input type="date" className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                          value={ag.ackDate||""} onChange={e => setAgencyField(agency.id,"ackDate",e.target.value)} />
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mb-2">
+                      {F("Submission Reference / Tracking No.",
+                        <input className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full" placeholder="e.g. EudraVigilance ref, FAERS ID…"
+                          value={ag.refNumber||""} onChange={e => setAgencyField(agency.id,"refNumber",e.target.value)} />
+                      )}
+                      {F("Submission Method",
+                        <select className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                          value={ag.method||""} onChange={e => setAgencyField(agency.id,"method",e.target.value)}>
+                          <option value="">— Select —</option>
+                          <option>E2B(R3) XML — Electronic</option>
+                          <option>E2B(R2) XML — Electronic</option>
+                          <option>Paper / Manual</option>
+                          <option>Agency Portal</option>
+                          <option>Email</option>
+                          <option>Other</option>
+                        </select>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 mb-2">
+                      {F("Report Type",
+                        <select className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                          value={ag.reportType||""} onChange={e => setAgencyField(agency.id,"reportType",e.target.value)}>
+                          <option value="">— Select —</option>
+                          <option>Initial</option>
+                          <option>Follow-up 1</option>
+                          <option>Follow-up 2</option>
+                          <option>Follow-up 3</option>
+                          <option>Final</option>
+                        </select>
+                      )}
+                      {F("Submitted By",
+                        <input className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full" placeholder="Submitter name or system"
+                          value={ag.submittedBy||user.username} onChange={e => setAgencyField(agency.id,"submittedBy",e.target.value)} />
+                      )}
+                    </div>
+                    {F("Notes",
+                      <textarea className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full resize-none" rows={2}
+                        placeholder={`Notes for ${agency.label} submission…`}
+                        value={ag.notes||""} onChange={e => setAgencyField(agency.id,"notes",e.target.value)} />
+                    )}
+                    {agency.portal && (
+                      <a href={agency.portal} target="_blank" rel="noreferrer"
+                        className="text-xs text-violet-600 hover:underline">
+                        🔗 Open {agency.label} submission portal
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {F("Submission Coordinator Comments",
+          <textarea className="border border-gray-300 rounded px-3 py-2 text-sm w-full resize-none" rows={3}
+            placeholder="Overall submission notes, issues, or follow-up actions required…"
+            value={sub.coordinatorNotes||""} onChange={e => setForm(f => ({ ...f, submissions:{ ...f.submissions, coordinatorNotes:e.target.value }}))} />
+        )}
+
+        <div className="flex justify-end pt-2">
+          <button onClick={() => saveTab({ submissions: form.submissions }, "Submissions")}
+            className="bg-violet-600 hover:bg-violet-700 text-white text-xs px-5 py-2 rounded-lg font-semibold transition flex items-center gap-2">
+            💾 Save Submissions
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  /* ---- STEP 6: CASE ARCHIVAL ---- */
+  const ArchivalForm = () => {
+    const arc = form.archival || {};
+    const sub = form.submissions || {};
+    const submittedAgencies = AGENCIES.filter(a => sub.agencies?.[a.id]?.selected && sub.agencies?.[a.id]?.submittedDate);
+
+    return (
+      <div className="space-y-5">
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+          <div className="text-xs font-bold text-gray-600 uppercase tracking-widest mb-3">Submissions Summary</div>
+          {submittedAgencies.length > 0 ? (
+            <div className="space-y-2">
+              {submittedAgencies.map(a => {
+                const ag = sub.agencies[a.id];
+                return (
+                  <div key={a.id} className="flex items-center gap-3 text-xs bg-white border border-green-200 rounded-lg px-3 py-2">
+                    <span className="text-green-500 font-bold">✅</span>
+                    <span className="font-semibold text-gray-800 w-28">{a.label}</span>
+                    <span className="text-gray-400">{a.country}</span>
+                    <span className="ml-auto font-mono text-gray-600">Submitted: {ag.submittedDate}</span>
+                    {ag.refNumber && <span className="text-gray-400">· Ref: {ag.refNumber}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              ⚠️ No agency submissions recorded. Ensure all required submissions are logged in Step 5 before archiving.
+            </div>
+          )}
+        </div>
+
+        <div>
+          <SectionHead color="indigo">Archival Details</SectionHead>
+          <div className="grid grid-cols-2 gap-3">
+            {F("Archival Date",
+              <input type="date" className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                value={arc.archivalDate || new Date().toISOString().split("T")[0]}
+                onChange={e => setNested("archival","archivalDate",e.target.value)} />
+            )}
+            {F("Archived By",
+              <input className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                value={arc.archivedBy || user.username}
+                onChange={e => setNested("archival","archivedBy",e.target.value)} />
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {F("Archive Location / System",
+              <input className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                placeholder="e.g. Veeva Vault, document ID, folder path…"
+                value={arc.location||""} onChange={e => setNested("archival","location",e.target.value)} />
+            )}
+            {F("Retention Period",
+              <select className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                value={arc.retention||""} onChange={e => setNested("archival","retention",e.target.value)}>
+                <option value="">— Select —</option>
+                <option>5 years from last submission</option>
+                <option>7 years from last submission</option>
+                <option>10 years from last submission</option>
+                <option>Lifetime of product + 10 years</option>
+                <option>Per local regulation</option>
+              </select>
+            )}
+          </div>
+          {F("Final Case Disposition",
+            <select className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+              value={arc.disposition||""} onChange={e => setNested("archival","disposition",e.target.value)}>
+              <option value="">— Select —</option>
+              <option>Complete — no further action</option>
+              <option>Complete — follow-up pending</option>
+              <option>Complete — signal detected, under evaluation</option>
+              <option>Closed — duplicate (cross-reference recorded)</option>
+              <option>Closed — unconfirmed</option>
+            </select>
+          )}
+          {F("Archival Notes",
+            <textarea className="border border-gray-300 rounded px-3 py-2 text-sm w-full resize-none" rows={3}
+              placeholder="Any final notes, cross-references, or signal tracking references…"
+              value={arc.notes||""} onChange={e => setNested("archival","notes",e.target.value)} />
+          )}
+        </div>
+
+        <div className="bg-green-50 border border-green-300 rounded-xl p-4">
+          <div className="text-xs font-bold text-green-700 uppercase tracking-widest mb-2">Archival Checklist</div>
+          <div className="space-y-1">
+            {[
+              ["allSubmitted",    "All required regulatory submissions completed"],
+              ["narrativeFinal",  "Final case narrative confirmed and signed off"],
+              ["documentsStored", "Supporting documents stored in archive system"],
+              ["signalReviewed",  "Signal detection review completed if applicable"],
+              ["retentionSet",    "Document retention period recorded"],
+            ].map(([key, lbl]) => (
+              <React.Fragment key={key}>
+                {C(lbl, arc[key], e => setNested("archival", key, e.target.checked), arc[key] ? "green" : "indigo")}
+              </React.Fragment>
+            ))}
+          </div>
+          <div className="mt-2 text-xs text-gray-400">
+            {["allSubmitted","narrativeFinal","documentsStored","signalReviewed","retentionSet"].filter(k=>arc[k]).length} / 5 items completed
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-2">
+          <button onClick={() => saveTab({ archival: form.archival }, "Case Archival")}
+            className="bg-gray-700 hover:bg-gray-800 text-white text-xs px-5 py-2 rounded-lg font-semibold transition flex items-center gap-2">
+            🗄️ Save &amp; Archive Case
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const renderModalForm = () => {
     if (!selected) return null;
     if (!isMyCase(selected)) return <ReadOnlySummary />;
     if (selected.currentStep === 2) return <DataEntryForm />;
     if (selected.currentStep === 3) return <MedicalForm />;
     if (selected.currentStep === 4) return <QualityForm />;
-    if (selected.currentStep === 5) return (
+    if (selected.currentStep === 5) return <SubmissionsForm />;
+    if (selected.currentStep === 6) return <ArchivalForm />;
+    if (selected.currentStep > 6) return (
       <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center text-green-700 font-semibold">
-        ✅ This case has been approved and closed.
+        ✅ This case has been archived.
       </div>
     );
   };
@@ -1588,7 +1900,7 @@ export default function App() {
         </div>
         <div className="flex items-center gap-4">
           <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold
-            ${user.step===1?"bg-blue-200 text-blue-900":user.step===2?"bg-teal-200 text-teal-900":user.step===3?"bg-purple-200 text-purple-900":"bg-orange-200 text-orange-900"}`}>
+            ${user.step===1?"bg-blue-200 text-blue-900":user.step===2?"bg-teal-200 text-teal-900":user.step===3?"bg-purple-200 text-purple-900":user.step===4?"bg-orange-200 text-orange-900":user.step===5?"bg-violet-200 text-violet-900":"bg-gray-200 text-gray-800"}`}>
             {user.role}
           </span>
           <span className="text-xs text-blue-200">{user.username}</span>
@@ -1627,7 +1939,7 @@ export default function App() {
         {user.step === 1 && <TriageForm />}
 
         {/* Kanban */}
-        <div className="grid grid-cols-5 gap-4">
+        <div className="grid grid-cols-6 gap-3">
           {STAGES.map(stage => {
             const stageCases = cases.filter(c => c.currentStep === stage.step);
             return (
@@ -1678,6 +1990,8 @@ export default function App() {
                   Step {selected.currentStep} · {selected.status}
                   {selected.triage?.country?" · "+selected.triage.country:""}
                   {selected.currentStep >= 3 && <span className="ml-2 text-violet-500 font-semibold">· E2B R3 ready</span>}
+                  {selected.currentStep === 5 && <span className="ml-2 text-violet-700 font-semibold">· Submissions</span>}
+                  {selected.currentStep === 6 && <span className="ml-2 text-gray-500 font-semibold">· Archived</span>}
                 </div>
               </div>
               <div className="flex gap-2 flex-wrap justify-end">
@@ -1702,7 +2016,7 @@ export default function App() {
                     ${showAudit?"bg-amber-500 hover:bg-amber-600 text-white":"bg-amber-100 hover:bg-amber-200 text-amber-800"}`}>
                   📋 Audit Trail {auditLog.length > 0 ? `(${auditLog.length})` : ""}
                 </button>
-                {isMyCase(selected) && selected.currentStep < 5 && !showAudit && (
+                {isMyCase(selected) && selected.currentStep < 6 && !showAudit && (
                   <button onClick={updateCase}
                     className="bg-green-600 hover:bg-green-700 text-white text-xs px-4 py-1.5 rounded-lg font-semibold transition">
                     Submit →
