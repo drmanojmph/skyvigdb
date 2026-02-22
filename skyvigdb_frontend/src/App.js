@@ -720,12 +720,17 @@ export default function App() {
   const chartData = STAGES.map(s => ({ name:s.name, value:cases.filter(c=>c.currentStep===s.step).length }));
 
   const ACTION_META = {
-    CASE_CREATED:     { color:"bg-blue-100 text-blue-800",    icon:"📥", label:"Case Created" },
-    CASE_UPDATED:     { color:"bg-indigo-100 text-indigo-800",icon:"✏️", label:"Case Updated" },
-    CASE_SUBMITTED:   { color:"bg-green-100 text-green-800",  icon:"✅", label:"Case Submitted" },
-    CASE_RETURNED:    { color:"bg-amber-100 text-amber-800",  icon:"↩️", label:"Returned for Query" },
-    E2B_EXPORTED:     { color:"bg-violet-100 text-violet-800",icon:"📨", label:"E2B XML Exported" },
-    TAB_SAVED:        { color:"bg-teal-100 text-teal-800",    icon:"💾", label:"Tab Saved" },
+    CASE_CREATED:        { color:"bg-blue-100 text-blue-800",    icon:"📥", label:"Case Created" },
+    CASE_UPDATED:        { color:"bg-indigo-100 text-indigo-800",icon:"✏️", label:"Case Updated" },
+    CASE_SUBMITTED:      { color:"bg-green-100 text-green-800",  icon:"✅", label:"Case Submitted" },
+    SUBMITTED:           { color:"bg-green-100 text-green-800",  icon:"✅", label:"Submitted" },
+    CASE_RETURNED:       { color:"bg-amber-100 text-amber-800",  icon:"↩️", label:"Returned for Query" },
+    ROUTE_BACK_TO_DE:    { color:"bg-amber-100 text-amber-800",  icon:"↩️", label:"Returned to Data Entry" },
+    RETURNED_TO_MEDICAL: { color:"bg-amber-100 text-amber-800",  icon:"↩️", label:"Returned to Medical" },
+    APPROVED:            { color:"bg-green-100 text-green-800",  icon:"✅", label:"Approved" },
+    E2B_EXPORTED:        { color:"bg-violet-100 text-violet-800",icon:"📨", label:"E2B XML Exported" },
+    TAB_SAVED:           { color:"bg-teal-100 text-teal-800",    icon:"💾", label:"Tab Saved" },
+    DUPLICATE_CHECK:     { color:"bg-yellow-100 text-yellow-800",icon:"🔍", label:"Duplicate Check" },
   };
 
   const renderAuditTrail = () => (
@@ -734,25 +739,27 @@ export default function App() {
       {auditLog.length === 0 ? (
         <div className="text-sm text-gray-400 text-center py-6">No audit entries found.</div>
       ) : auditLog.map((entry, i) => {
-        const meta = ACTION_META[entry.action] || { color:"bg-gray-100 text-gray-700", icon:"•", label:entry.action };
+        const meta = ACTION_META[entry.actionType] || { color:"bg-gray-100 text-gray-700", icon:"•", label:entry.actionType || entry.action || "Event" };
         return (
           <div key={i} className="flex gap-3 mb-3 pb-3 border-b border-gray-100 last:border-0">
             <div className="text-2xl leading-none">{meta.icon}</div>
             <div className="flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${meta.color}`}>{meta.label}</span>
-                <span className="text-xs text-gray-400">{new Date(entry.performedAt).toLocaleString()}</span>
+                <span className="text-xs text-gray-400">{new Date(entry.timestamp || entry.performedAt).toLocaleString("en-GB", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" })}</span>
               </div>
               <div className="text-xs text-gray-500 mt-1">
                 <span className="font-medium">{entry.performedBy}</span>
                 {entry.role && <span className="ml-1">({entry.role})</span>}
-                {entry.step && <span className="ml-1 text-gray-400">· Step {entry.step}</span>}
+                {(entry.stepFrom || entry.stepTo) && (
+                  <span className="ml-1 text-gray-400">
+                    · Step {entry.stepFrom}{entry.stepTo && entry.stepTo !== entry.stepFrom ? ` → ${entry.stepTo}` : ""}
+                  </span>
+                )}
               </div>
-              {entry.metadata && Object.keys(entry.metadata).length > 0 && (
-                <div className="mt-1 text-xs text-gray-400 bg-gray-50 rounded px-2 py-1 font-mono">
-                  {Object.entries(entry.metadata).map(([k,v]) => (
-                    <span key={k} className="mr-3">{k}: {String(v)}</span>
-                  ))}
+              {entry.details && (
+                <div className="mt-1 text-xs text-gray-400 bg-gray-50 rounded px-2 py-1 leading-relaxed">
+                  {entry.details}
                 </div>
               )}
             </div>
