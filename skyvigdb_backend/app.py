@@ -257,6 +257,8 @@ class Case(db.Model):
     events    = db.Column(db.JSON)
     medical   = db.Column(db.JSON)
     quality   = db.Column(db.JSON)
+    submissions = db.Column(db.JSON)
+    archival    = db.Column(db.JSON)
     narrative = db.Column(db.Text)
 
     def to_dict(self):
@@ -267,14 +269,16 @@ class Case(db.Model):
             "status":      self.status,
             "createdAt":   self.created_at.isoformat() if self.created_at else None,
             "updatedAt":   self.updated_at.isoformat() if self.updated_at else None,
-            "triage":      self.triage    or {},
-            "general":     self.general   or {},
-            "patient":     self.patient   or {},
-            "products":    self.products  or [],
-            "events":      self.events    or [],
-            "medical":     self.medical   or {},
-            "quality":     self.quality   or {},
-            "narrative":   self.narrative or ""
+            "triage":      self.triage       or {},
+            "general":     self.general      or {},
+            "patient":     self.patient      or {},
+            "products":    self.products     or [],
+            "events":      self.events       or [],
+            "medical":     self.medical      or {},
+            "quality":     self.quality      or {},
+            "submissions": self.submissions  or {},
+            "archival":    self.archival     or {},
+            "narrative":   self.narrative    or ""
         }
 
 
@@ -361,6 +365,16 @@ def init_db():
         try:
             with app.app_context():
                 db.create_all()
+                # Migrate existing databases: add submissions and archival columns if absent
+                from sqlalchemy import text
+                with db.engine.connect() as conn:
+                    for col in ("submissions", "archival"):
+                        try:
+                            conn.execute(text(f"ALTER TABLE pv_case ADD COLUMN {col} JSON"))
+                            conn.commit()
+                            print(f"[SkyVigilance] Migration: added column '{col}' to pv_case.")
+                        except Exception:
+                            pass  # Column already exists — safe to ignore
             print(f"[SkyVigilance] DB init OK (attempt {attempt})")
             return
         except Exception as e:
@@ -1089,7 +1103,7 @@ def update_case(case_id):
 
             if final == "approved":
                 case.current_step = 5
-                case.status       = "Approved"
+                case.status       = "Submissions"
 
                 log_event(
                     case_id      = case_id,
@@ -1100,8 +1114,8 @@ def update_case(case_id):
                     step_to      = 5,
                     section      = "quality",
                     details      = (
-                        f"{performed_by} ({role}) approved and closed the case. "
-                        f"QC comments: {quality.get('comments','none')}."
+                        f"{performed_by} ({role}) approved case at Quality Review. "
+                        f"Advancing to Submissions. QC comments: {quality.get('comments','none')}."
                     ),
                 )
 
@@ -1124,13 +1138,58 @@ def update_case(case_id):
                 )
 
         elif step == 5:
-            return jsonify({"error": "Case is approved and closed. No further updates permitted."}), 400
+            # Submissions → Archival
+            submissions = data.get("submissions", case.submissions or {})
+            case.submissions  = submissions
+            case.current_step = 6
+            case.status       = "Archived"
+
+            agencies_submitted = [
+                k for k, v in (submissions.get("agencies") or {}).items()
+                if v.get("selected") and v.get("submittedDate")
+            ]
+
+            log_event(
+                case_id      = case_id,
+                action_type  = "SUBMITTED",
+                performed_by = performed_by,
+                role         = role,
+                step_from    = 5,
+                step_to      = 6,
+                section      = "submissions",
+                details      = (
+                    f"{performed_by} ({role}) completed Submissions and advanced case to Archival. "
+                    f"Agencies submitted: {', '.join(agencies_submitted) if agencies_submitted else 'none recorded'}."
+                ),
+            )
+
+        elif step == 6:
+            # Archival — save archival data and close
+            archival = data.get("archival", case.archival or {})
+            case.archival     = archival
+            case.current_step = 7
+            case.status       = "Closed"
+
+            log_event(
+                case_id      = case_id,
+                action_type  = "SUBMITTED",
+                performed_by = performed_by,
+                role         = role,
+                step_from    = 6,
+                step_to      = 7,
+                section      = "archival",
+                details      = (
+                    f"{performed_by} ({role}) completed Case Archival. "
+                    f"Disposition: {archival.get('disposition','not recorded')}. "
+                    f"Location: {archival.get('location','not recorded')}."
+                ),
+            )
 
         else:
             return jsonify({"error": f"Unexpected case step: {step}"}), 400
 
         case.updated_at = datetime.utcnow()
-        for col in ("triage", "general", "patient", "products", "events", "medical", "quality"):
+        for col in ("triage", "general", "patient", "products", "events", "medical", "quality", "submissions", "archival"):
             flag_modified(case, col)
         db.session.commit()
 
@@ -1151,18 +1210,21 @@ def patch_case(case_id):
         data = request.json or {}
         performed_by, role, data = extract_audit(data)
 
-        saved_sections = [s for s in ("triage","general","patient","products","events","medical","narrative") if s in data]
+        saved_sections = [s for s in ("triage","general","patient","products","events","medical","narrative","quality","submissions","archival") if s in data]
 
-        if "triage"    in data: case.triage    = data["triage"]
-        if "general"   in data: case.general   = data["general"]
-        if "patient"   in data: case.patient   = data["patient"]
-        if "products"  in data: case.products  = data["products"]
-        if "events"    in data: case.events    = data["events"]
-        if "medical"   in data: case.medical   = data["medical"]
-        if "narrative" in data: case.narrative = data["narrative"]
+        if "triage"       in data: case.triage       = data["triage"]
+        if "general"      in data: case.general      = data["general"]
+        if "patient"      in data: case.patient      = data["patient"]
+        if "products"     in data: case.products     = data["products"]
+        if "events"       in data: case.events       = data["events"]
+        if "medical"      in data: case.medical      = data["medical"]
+        if "quality"      in data: case.quality      = data["quality"]
+        if "submissions"  in data: case.submissions  = data["submissions"]
+        if "archival"     in data: case.archival     = data["archival"]
+        if "narrative"    in data: case.narrative    = data["narrative"]
 
         case.updated_at = datetime.utcnow()
-        for col in ("triage", "general", "patient", "products", "events", "medical", "quality"):
+        for col in ("triage", "general", "patient", "products", "events", "medical", "quality", "submissions", "archival"):
             flag_modified(case, col)
 
         log_event(
@@ -1240,8 +1302,8 @@ def duplicate_check():
     try:
         incoming = request.json or {}
 
-        # Pull only non-approved cases (step < 5) — closed cases are historical
-        open_cases = Case.query.filter(Case.current_step < 5).all()
+        # Exclude archived/closed cases (steps 6+) from duplicate check
+        open_cases = Case.query.filter(Case.current_step < 6).all()
 
         candidates = []
         for c in open_cases:
@@ -1454,7 +1516,8 @@ def get_stats():
             "Data Entry":     Case.query.filter_by(current_step=2).count(),
             "Medical Review": Case.query.filter_by(current_step=3).count(),
             "Quality Review": Case.query.filter_by(current_step=4).count(),
-            "Approved":       Case.query.filter_by(current_step=5).count(),
+            "Submissions":    Case.query.filter_by(current_step=5).count(),
+            "Archived":       Case.query.filter(Case.current_step >= 6).count(),
         }
         return jsonify({"total": total, "byStep": by_step})
     except Exception as e:
