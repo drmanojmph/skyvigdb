@@ -109,7 +109,6 @@ def _fuzzy_score(incoming: dict, existing_case) -> float:
 # =========================================================
 
 from lxml import etree
-from datetime import datetime, timezone
 import uuid as _uuid_mod
 
 HL7      = "urn:hl7-org:v3"
@@ -302,14 +301,17 @@ class AuditLog(db.Model):
 
     def to_dict(self):
         ts = self.timestamp
-        if ts is not None:
-            ts_str = ts.replace(tzinfo=None).isoformat(timespec="seconds") + "Z"
+        if ts is None:
+            ts_display = ""
+        elif isinstance(ts, datetime):
+            ts_display = ts.strftime("%d %b %Y, %H:%M")
         else:
-            ts_str = None
+            # Driver returned a string — clean it up
+            ts_display = str(ts).replace("T", " ").replace("+00:00", "").replace("Z", "")[:16]
         return {
             "id":          self.id,
             "caseId":      self.case_id,
-            "timestamp":   ts_str,
+            "timestamp":   ts_display,
             "actionType":  self.action_type,
             "performedBy": self.performed_by,
             "role":        self.role,
