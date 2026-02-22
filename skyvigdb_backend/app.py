@@ -301,10 +301,15 @@ class AuditLog(db.Model):
     details      = db.Column(db.Text,    nullable=True)
 
     def to_dict(self):
+        ts = self.timestamp
+        if ts is not None:
+            ts_str = ts.replace(tzinfo=None).isoformat(timespec="seconds") + "Z"
+        else:
+            ts_str = None
         return {
             "id":          self.id,
             "caseId":      self.case_id,
-            "timestamp":   self.timestamp.isoformat() + "Z",
+            "timestamp":   ts_str,
             "actionType":  self.action_type,
             "performedBy": self.performed_by,
             "role":        self.role,
