@@ -182,12 +182,12 @@ export default function App() {
   };
 
   if (!user) return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-900 to-indigo-900">
-      <div className="bg-white p-8 rounded-2xl shadow-2xl w-80">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-900 to-indigo-900 px-4">
+      <div className="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-sm mb-6">
         <div className="text-center mb-6">
           <div className="text-4xl mb-2">🛡️</div>
           <h2 className="text-xl font-bold text-gray-800">SkyVigilance</h2>
-          <p className="text-xs text-gray-400 mt-1">Safety Database Platform</p>
+          <p className="text-xs text-gray-400 mt-1">Safety Database Training Platform</p>
         </div>
         <input placeholder="Username" className="border border-gray-300 rounded px-3 py-2 w-full mb-2 text-sm"
           value={login.username} onChange={e => setLogin({...login, username:e.target.value})}
@@ -197,7 +197,34 @@ export default function App() {
           onKeyDown={e => e.key === "Enter" && doLogin()} />
         <button onClick={doLogin} className="bg-indigo-700 hover:bg-indigo-800 text-white w-full py-2 rounded-lg font-semibold transition">Login</button>
       </div>
-      <p className="mt-6 text-xs text-blue-200 opacity-75">A VigiServe Foundation Initiative</p>
+
+      {/* Credentials reference card */}
+      <div className="bg-white bg-opacity-10 backdrop-blur rounded-2xl p-5 w-full max-w-sm border border-white border-opacity-20">
+        <div className="text-white text-xs font-bold uppercase tracking-widest mb-3 opacity-80">Training Credentials — all passwords: <span className="font-mono bg-white bg-opacity-20 px-2 py-0.5 rounded">train123</span></div>
+        <div className="space-y-1.5">
+          {[
+            { step:1, role:"Triage",       user:"triage1",      color:"bg-blue-400",   desc:"Book-in new cases" },
+            { step:2, role:"Data Entry",   user:"dataentry1",   color:"bg-teal-400",   desc:"Enter full case data & narrative" },
+            { step:3, role:"Medical",      user:"medical1",     color:"bg-purple-400", desc:"MedDRA coding & causality" },
+            { step:4, role:"Quality",      user:"quality1",     color:"bg-orange-400", desc:"QC checklist & approval" },
+            { step:5, role:"Submissions",  user:"submissions1", color:"bg-violet-400", desc:"Submit to regulatory agencies" },
+            { step:6, role:"Archival",     user:"archival1",    color:"bg-gray-400",   desc:"Archive & close case" },
+          ].map(r => (
+            <div key={r.step}
+              className="flex items-center gap-3 bg-white bg-opacity-10 rounded-lg px-3 py-2 cursor-pointer hover:bg-opacity-20 transition"
+              onClick={() => setLogin({ username: r.user, password: "train123" })}>
+              <span className={`${r.color} text-white text-xs font-bold px-1.5 py-0.5 rounded w-5 text-center`}>{r.step}</span>
+              <div className="flex-1 min-w-0">
+                <div className="text-white text-xs font-semibold">{r.role} <span className="font-mono opacity-70">— {r.user}</span></div>
+                <div className="text-blue-200 text-xs opacity-70 truncate">{r.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="text-blue-200 text-xs mt-3 opacity-60 text-center">Click any row to auto-fill credentials</p>
+      </div>
+
+      <p className="mt-5 text-xs text-blue-200 opacity-50">A VigiServe Foundation Initiative</p>
     </div>
   );
 
@@ -1972,6 +1999,13 @@ export default function App() {
             );
           })}
         </div>
+
+        {/* Closed/archived cases count */}
+        {cases.filter(c => c.currentStep >= 7).length > 0 && (
+          <div className="mt-3 text-xs text-gray-400 text-right">
+            🗄️ {cases.filter(c => c.currentStep >= 7).length} case{cases.filter(c => c.currentStep >= 7).length > 1 ? "s" : ""} fully archived &amp; closed
+          </div>
+        )}
       </div>
 
       <footer className="bg-blue-900 border-t border-blue-800 py-3 text-center">
@@ -2016,10 +2050,13 @@ export default function App() {
                     ${showAudit?"bg-amber-500 hover:bg-amber-600 text-white":"bg-amber-100 hover:bg-amber-200 text-amber-800"}`}>
                   📋 Audit Trail {auditLog.length > 0 ? `(${auditLog.length})` : ""}
                 </button>
-                {isMyCase(selected) && selected.currentStep < 6 && !showAudit && (
+                {isMyCase(selected) && selected.currentStep < 7 && !showAudit && (
                   <button onClick={updateCase}
                     className="bg-green-600 hover:bg-green-700 text-white text-xs px-4 py-1.5 rounded-lg font-semibold transition">
-                    Submit →
+                    {selected.currentStep === 4 ? "✅ Approve →" :
+                     selected.currentStep === 5 ? "📬 Complete Submissions →" :
+                     selected.currentStep === 6 ? "🗄️ Archive & Close →" :
+                     "Submit →"}
                   </button>
                 )}
                 <button onClick={() => { setSelected(null); setShowAudit(false); setAuditLog([]); setMeddraQuery(""); setMeddraResults([]); }}
