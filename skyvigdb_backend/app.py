@@ -306,17 +306,30 @@ class AuditLog(db.Model):
         elif isinstance(ts, datetime):
             ts_display = ts.strftime("%d %b %Y, %H:%M")
         else:
-            # Driver returned a string — clean it up
-            ts_display = str(ts).replace("T", " ").replace("+00:00", "").replace("Z", "")[:16]
+            # Driver returned a string — strip timezone noise and reformat
+            raw = str(ts).replace("T", " ").replace("+00:00", "").replace("Z", "").strip()
+            # Try to reformat YYYY-MM-DD HH:MM to DD Mon YYYY, HH:MM
+            import re as _re
+            m = _re.match(r"^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})", raw)
+            if m:
+                months = ["Jan","Feb","Mar","Apr","May","Jun",
+                          "Jul","Aug","Sep","Oct","Nov","Dec"]
+                ts_display = f"{m.group(3)} {months[int(m.group(2))-1]} {m.group(1)}, {m.group(4)}"
+            else:
+                ts_display = raw[:16]
         return {
             "id":          self.id,
             "caseId":      self.case_id,
+            # Both field names — covers old and new frontend builds
             "timestamp":   ts_display,
+            "performedAt": ts_display,
             "actionType":  self.action_type,
+            "action":      self.action_type,   # alias for old frontend
             "performedBy": self.performed_by,
             "role":        self.role,
             "stepFrom":    self.step_from,
             "stepTo":      self.step_to,
+            "step":        self.step_to,       # alias for old frontend
             "section":     self.section,
             "details":     self.details,
         }
