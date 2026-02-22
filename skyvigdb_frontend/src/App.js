@@ -733,7 +733,14 @@ export default function App() {
     DUPLICATE_CHECK:     { color:"bg-yellow-100 text-yellow-800",icon:"🔍", label:"Duplicate Check" },
   };
 
-  const renderAuditTrail = () => (
+  const renderAuditTrail = () => {
+    const fmtDate = (raw) => {
+      if (!raw) return "—";
+      const d = new Date(raw);
+      if (isNaN(d.getTime())) return String(raw).replace("T", " ").replace("Z", "").slice(0, 19);
+      return d.toLocaleString("en-GB", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
+    };
+    return (
     <div>
       <div className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-3">📋 Audit Trail — {selected?.caseNumber}</div>
       {auditLog.length === 0 ? (
@@ -746,7 +753,7 @@ export default function App() {
             <div className="flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${meta.color}`}>{meta.label}</span>
-                <span className="text-xs text-gray-400">{new Date(entry.timestamp || entry.performedAt).toLocaleString("en-GB", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" })}</span>
+                <span className="text-xs text-gray-400">{fmtDate(entry.timestamp || entry.performedAt)}</span>
               </div>
               <div className="text-xs text-gray-500 mt-1">
                 <span className="font-medium">{entry.performedBy}</span>
@@ -767,7 +774,8 @@ export default function App() {
         );
       })}
     </div>
-  );
+    );
+  };
 
   /* ---- STEP 1: TRIAGE FORM ---- */
   const TriageForm = () => (
