@@ -736,12 +736,22 @@ export default function App() {
   const renderAuditTrail = () => {
     const fmtDate = (raw) => {
       if (!raw) return "—";
-      // Backend sends pre-formatted "DD Mon YYYY, HH:MM" — return directly
-      // Fallback: try parsing as Date, then strip T/Z as last resort
-      if (/^\d{2} \w{3} \d{4}/.test(String(raw))) return String(raw);
-      const d = new Date(raw);
-      if (!isNaN(d.getTime())) return d.toLocaleString("en-GB", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
-      return String(raw).replace("T", " ").replace(/([+-]\d{2}:\d{2}|Z)/, "").slice(0, 16);
+      const s = String(raw).trim();
+      if (!s || s === "null" || s === "undefined") return "—";
+
+      // Already pre-formatted by updated backend: "22 Feb 2025, 14:30"
+      if (/^\d{2} \w{3} \d{4}/.test(s)) return s;
+
+      // Extract date and time parts directly from the string — no Date() parsing at all.
+      // Handles: "2025-02-22T14:30:00Z", "2025-02-22T14:30:00+00:00",
+      //          "2025-02-22T14:30:00+00:00Z", "2025-02-22 14:30:00.123456", etc.
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+      if (m) {
+        const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        return `${m[3]} ${months[parseInt(m[2], 10) - 1]} ${m[1]}, ${m[4]}:${m[5]}`;
+      }
+
+      return s.slice(0, 16);
     };
     return (
     <div>
