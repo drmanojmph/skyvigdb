@@ -736,9 +736,12 @@ export default function App() {
   const renderAuditTrail = () => {
     const fmtDate = (raw) => {
       if (!raw) return "—";
+      // Backend sends pre-formatted "DD Mon YYYY, HH:MM" — return directly
+      // Fallback: try parsing as Date, then strip T/Z as last resort
+      if (/^\d{2} \w{3} \d{4}/.test(String(raw))) return String(raw);
       const d = new Date(raw);
-      if (isNaN(d.getTime())) return String(raw).replace("T", " ").replace("Z", "").slice(0, 19);
-      return d.toLocaleString("en-GB", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
+      if (!isNaN(d.getTime())) return d.toLocaleString("en-GB", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
+      return String(raw).replace("T", " ").replace(/([+-]\d{2}:\d{2}|Z)/, "").slice(0, 16);
     };
     return (
     <div>
