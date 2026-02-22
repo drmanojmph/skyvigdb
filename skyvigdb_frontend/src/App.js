@@ -1874,12 +1874,12 @@ export default function App() {
 
   const renderModalForm = () => {
     if (!selected) return null;
-    if (!isMyCase(selected)) return <ReadOnlySummary />;
-    if (selected.currentStep === 2) return <DataEntryForm />;
-    if (selected.currentStep === 3) return <MedicalForm />;
-    if (selected.currentStep === 4) return <QualityForm />;
-    if (selected.currentStep === 5) return <SubmissionsForm />;
-    if (selected.currentStep === 6) return <ArchivalForm />;
+    if (!isMyCase(selected)) return ReadOnlySummary();
+    if (selected.currentStep === 2) return DataEntryForm();
+    if (selected.currentStep === 3) return MedicalForm();
+    if (selected.currentStep === 4) return QualityForm();
+    if (selected.currentStep === 5) return SubmissionsForm();
+    if (selected.currentStep === 6) return ArchivalForm();
     if (selected.currentStep > 6) return (
       <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center text-green-700 font-semibold">
         ✅ This case has been archived.
@@ -1936,7 +1936,7 @@ export default function App() {
         </div>
 
         {/* Triage Book-in */}
-        {user.step === 1 && <TriageForm />}
+        {user.step === 1 && TriageForm()}
 
         {/* Kanban */}
         <div className="grid grid-cols-6 gap-3">
