@@ -14,6 +14,7 @@ const IME_TERMS = [
 
 const BASE_ACCOUNTS = [
   { basename: "anand", password: "password123" },
+   { basename: "manoj", password: "m123anoj" },
   { basename: "student1", password: "train123" },
   { basename: "demo", password: "demo123" }
 ];
