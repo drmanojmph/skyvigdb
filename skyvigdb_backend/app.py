@@ -1183,30 +1183,55 @@ def update_case(case_id):
                 )
 
         elif step == 5:
-            # Submissions → Archival
             submissions = data.get("submissions", case.submissions or {})
-            case.submissions  = submissions
-            case.current_step = 6
-            case.status       = "Archived"
+            route_back_quality = bool(submissions.get("routeBackToQuality", False))
 
-            agencies_submitted = [
-                k for k, v in (submissions.get("agencies") or {}).items()
-                if v.get("selected") and v.get("submittedDate")
-            ]
+            if route_back_quality:
+                # Strip the routing flag before saving
+                clean_submissions = {k: v for k, v in submissions.items()
+                                     if k != "routeBackToQuality"}
+                case.submissions  = clean_submissions
+                case.current_step = 4
+                case.status       = "Returned to Quality"
 
-            log_event(
-                case_id      = case_id,
-                action_type  = "SUBMITTED",
-                performed_by = performed_by,
-                role         = role,
-                step_from    = 5,
-                step_to      = 6,
-                section      = "submissions",
-                details      = (
-                    f"{performed_by} ({role}) completed Submissions and advanced case to Archival. "
-                    f"Agencies submitted: {', '.join(agencies_submitted) if agencies_submitted else 'none recorded'}."
-                ),
-            )
+                log_event(
+                    case_id      = case_id,
+                    action_type  = "ROUTE_BACK_TO_QUALITY",
+                    performed_by = performed_by,
+                    role         = role,
+                    step_from    = 5,
+                    step_to      = 4,
+                    section      = "submissions",
+                    details      = (
+                        f"{performed_by} ({role}) returned case from Submissions to Quality Review. "
+                        f"Return reason: {submissions.get('returnReason', 'not specified')}."
+                    ),
+                )
+
+            else:
+                # Submissions → Archival
+                case.submissions  = submissions
+                case.current_step = 6
+                case.status       = "Archived"
+
+                agencies_submitted = [
+                    k for k, v in (submissions.get("agencies") or {}).items()
+                    if v.get("selected") and v.get("submittedDate")
+                ]
+
+                log_event(
+                    case_id      = case_id,
+                    action_type  = "SUBMITTED",
+                    performed_by = performed_by,
+                    role         = role,
+                    step_from    = 5,
+                    step_to      = 6,
+                    section      = "submissions",
+                    details      = (
+                        f"{performed_by} ({role}) completed Submissions and advanced case to Archival. "
+                        f"Agencies submitted: {', '.join(agencies_submitted) if agencies_submitted else 'none recorded'}."
+                    ),
+                )
 
         elif step == 6:
             # Archival — save archival data and close
