@@ -128,30 +128,22 @@ const MedDRAWidget = ({ targetSection, targetIdx, currentPt, currentPtCode, curr
   );
 };
 
-function SearchPanel({ cases, qCase, qProduct, qCountry,
-                       setSrchCase, setSrchProduct, setSrchCountry,
-                       setSelected, setForm, setShowAudit,
-                       setTab, setMeddraQuery, setMeddraResults, fetchAudit }) {
-
-  const results = cases.filter(c => {
-    const caseNum  = (c.caseNumber || c.id || "").toLowerCase();
-    const country  = (c.triage?.country || "").toLowerCase();
-    const products = (c.products || []).map(p => (p.name || "") + " " + (p.genericName || "")).join(" ").toLowerCase();
-
-    const matchCase    = !qCase.trim()    || caseNum.includes(qCase.trim().toLowerCase());
-    const matchProduct = !qProduct.trim() || products.includes(qProduct.trim().toLowerCase());
-    const matchCountry = !qCountry.trim() || country.includes(qCountry.trim().toLowerCase());
-
-    return matchCase && matchProduct && matchCountry;
-  });
+function SearchPanel({ cases, onOpenCase }) {
+  const [qCase,    setQCase]    = React.useState("");
+  const [qProduct, setQProduct] = React.useState("");
+  const [qCountry, setQCountry] = React.useState("");
 
   const hasQuery = qCase.trim() || qProduct.trim() || qCountry.trim();
 
-  const openCase = (c) => {
-    setSelected(c); setForm(c); setShowAudit(false);
-    setTab("general"); setMeddraQuery(""); setMeddraResults([]);
-    fetchAudit(c.id);
-  };
+  const results = hasQuery ? cases.filter(c => {
+    const caseNum  = (c.caseNumber || c.id || "").toLowerCase();
+    const country  = (c.triage?.country || "").toLowerCase();
+    const products = (c.products || []).map(p => (p.name || "") + " " + (p.genericName || "")).join(" ").toLowerCase();
+    const matchCase    = !qCase.trim()    || caseNum.includes(qCase.trim().toLowerCase());
+    const matchProduct = !qProduct.trim() || products.includes(qProduct.trim().toLowerCase());
+    const matchCountry = !qCountry.trim() || country.includes(qCountry.trim().toLowerCase());
+    return matchCase && matchProduct && matchCountry;
+  }) : [];
 
   const stepColor = (step) => {
     const map = {1:"bg-blue-100 text-blue-800", 2:"bg-teal-100 text-teal-800",
@@ -162,7 +154,6 @@ function SearchPanel({ cases, qCase, qProduct, qCountry,
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-6 w-full">
-      {/* Search inputs */}
       <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-5 mb-5">
         <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4">🔍 Case Search</h3>
         <div className="grid grid-cols-3 gap-4">
@@ -170,9 +161,9 @@ function SearchPanel({ cases, qCase, qProduct, qCountry,
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Case Number</label>
             <input
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 w-full"
-              placeholder="e.g. PV-1718…"
+              placeholder="e.g. PV-1718..."
               value={qCase}
-              onChange={e => setSrchCase(e.target.value)}
+              onChange={e => setQCase(e.target.value)}
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -181,16 +172,16 @@ function SearchPanel({ cases, qCase, qProduct, qCountry,
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 w-full"
               placeholder="Brand or generic name"
               value={qProduct}
-              onChange={e => setSrchProduct(e.target.value)}
+              onChange={e => setQProduct(e.target.value)}
             />
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Country of Incidence</label>
             <input
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 w-full"
-              placeholder="e.g. India, Germany…"
+              placeholder="e.g. India, Germany..."
               value={qCountry}
-              onChange={e => setSrchCountry(e.target.value)}
+              onChange={e => setQCountry(e.target.value)}
             />
           </div>
         </div>
@@ -202,15 +193,14 @@ function SearchPanel({ cases, qCase, qProduct, qCountry,
                 : `${results.length} case${results.length === 1 ? "" : "s"} found`}
             </span>
             <button
-              onClick={() => { setSrchCase(""); setSrchProduct(""); setSrchCountry(""); }}
+              onClick={() => { setQCase(""); setQProduct(""); setQCountry(""); }}
               className="text-xs text-gray-400 hover:text-red-500 transition font-medium">
-              ✕ Clear
+              Clear
             </button>
           </div>
         )}
       </div>
 
-      {/* Results */}
       {hasQuery && results.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-blue-100 overflow-hidden">
           <table className="w-full text-sm border-collapse">
@@ -233,18 +223,18 @@ function SearchPanel({ cases, qCase, qProduct, qCountry,
                 const d  = (c.products || [{}])[0] || {};
                 return (
                   <tr key={c.id}
-                    onClick={() => openCase(c)}
+                    onClick={() => onOpenCase(c)}
                     className={`border-b border-gray-100 cursor-pointer hover:bg-indigo-50 transition ${i%2===0?"bg-white":"bg-gray-50/50"}`}>
                     <td className="px-4 py-3 font-mono font-semibold text-indigo-700 whitespace-nowrap">{c.caseNumber}</td>
-                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{t.receiptDate || "—"}</td>
-                    <td className="px-4 py-3 text-gray-700">{t.country || "—"}</td>
-                    <td className="px-4 py-3 font-medium text-gray-800">{d.name || "—"}{d.genericName ? <span className="text-gray-400 font-normal"> / {d.genericName}</span> : ""}</td>
-                    <td className="px-4 py-3 text-gray-600 italic max-w-xs truncate">{ev.term || "—"}</td>
-                    <td className="px-4 py-3 font-semibold text-purple-800">{ev.pt || "—"}</td>
-                    <td className="px-4 py-3 text-gray-500">{t.qualification || "—"}</td>
+                    <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{t.receiptDate || "-"}</td>
+                    <td className="px-4 py-3 text-gray-700">{t.country || "-"}</td>
+                    <td className="px-4 py-3 font-medium text-gray-800">{d.name || "-"}{d.genericName ? <span className="text-gray-400 font-normal"> / {d.genericName}</span> : ""}</td>
+                    <td className="px-4 py-3 text-gray-600 italic max-w-xs truncate">{ev.term || "-"}</td>
+                    <td className="px-4 py-3 font-semibold text-purple-800">{ev.pt || "-"}</td>
+                    <td className="px-4 py-3 text-gray-500">{t.qualification || "-"}</td>
                     <td className="px-4 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${stepColor(c.currentStep)}`}>
-                        {c.status || "—"}
+                        {c.status || "-"}
                       </span>
                     </td>
                   </tr>
@@ -255,9 +245,8 @@ function SearchPanel({ cases, qCase, qProduct, qCountry,
         </div>
       )}
 
-      {/* Empty state before any search */}
       {!hasQuery && (
-        <div className="text-center py-20 text-gray-300">
+        <div className="text-center py-20">
           <div className="text-5xl mb-3">🔍</div>
           <div className="text-sm font-medium text-gray-400">Enter a case number, product name, or country above to search across all cases.</div>
           <div className="text-xs text-gray-300 mt-1">Searches across active, submitted, and archived cases.</div>
@@ -266,6 +255,7 @@ function SearchPanel({ cases, qCase, qProduct, qCountry,
     </div>
   );
 }
+
 
 
 export default function App() {
@@ -287,9 +277,6 @@ export default function App() {
   const [dupLoading, setDupLoading]     = useState(false);
   const [showLineListing, setShowLineListing] = useState(false);
   const [activeView,      setActiveView]      = useState("dashboard");
-  const [srchCase,    setSrchCase]    = useState("");
-  const [srchProduct, setSrchProduct] = useState("");
-  const [srchCountry, setSrchCountry] = useState("");
   const [llFilter,        setLlFilter]        = useState("");
   const [llSortKey,       setLlSortKey]       = useState("receiptDate");
   const [llSortDir,       setLlSortDir]       = useState("desc");
@@ -340,9 +327,6 @@ export default function App() {
     setMsg(null);
     setShowLineListing(false);
     setActiveView("dashboard");
-    setSrchCase("");
-    setSrchProduct("");
-    setSrchCountry("");
     setLlFilter("");
     setLlSortKey("receiptDate");
     setLlSortDir("desc");
@@ -2437,19 +2421,11 @@ export default function App() {
       {activeView === "search" && (
         <SearchPanel
           cases={cases}
-          qCase={srchCase}
-          qProduct={srchProduct}
-          qCountry={srchCountry}
-          setSrchCase={setSrchCase}
-          setSrchProduct={setSrchProduct}
-          setSrchCountry={setSrchCountry}
-          setSelected={setSelected}
-          setForm={setForm}
-          setShowAudit={setShowAudit}
-          setTab={setTab}
-          setMeddraQuery={setMeddraQuery}
-          setMeddraResults={setMeddraResults}
-          fetchAudit={fetchAudit}
+          onOpenCase={(c) => {
+            setSelected(c); setForm(c); setShowAudit(false);
+            setTab("general"); setMeddraQuery(""); setMeddraResults([]);
+            fetchAudit(c.id);
+          }}
         />
       )}
 
