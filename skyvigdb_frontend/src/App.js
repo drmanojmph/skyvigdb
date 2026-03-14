@@ -2528,7 +2528,6 @@ export default function App() {
             </details>
           );
         })()}
-      </div>
       </div>}
 
       {showLineListing && <LineListing />}
