@@ -146,6 +146,11 @@ export default function App() {
   const [dupResults, setDupResults]     = useState(null);
   const [dupLoading, setDupLoading]     = useState(false);
   const [showLineListing, setShowLineListing] = useState(false);
+  const [llFilter,        setLlFilter]        = useState("");
+  const [llSortKey,       setLlSortKey]       = useState("receiptDate");
+  const [llSortDir,       setLlSortDir]       = useState("desc");
+  const [llStepFilter,    setLlStepFilter]    = useState("all");
+  const [llSeriousFilter, setLlSeriousFilter] = useState("all");
 
   useEffect(() => { if (user) { fetchCases(); axios.get(API + "/health").catch(() => {}); } }, [user]);
 
@@ -1990,23 +1995,31 @@ export default function App() {
       doc.text(`Generated: ${new Date().toLocaleDateString("en-GB")} | Total cases: ${rows.length}`, PW-M-80, M+7);
       doc.setTextColor(0,0,0);
 
-      const colW = [22,22,22,20,18,14,10,28,22,18,16,20,18,18,28,24,14,20,18,32,18,18,22,22,20];
+      const colW = [16,18,18,14,12,10,8,22,18,14,12,16,14,14,22,20,10,16,14,24,14,14,16,16,16];
+      // Total = 388mm — fits within A3 landscape usable width of 400mm (420 - 2×10 margin)
+      const PH_A3 = 297;
       let x = M, y = M+14;
       doc.setFont("helvetica","bold"); doc.setFontSize(5.5); doc.setFillColor(230,232,240);
-      headers.forEach((h,i) => {
-        doc.rect(x, y, colW[i], 8,"F"); doc.setDrawColor(180,180,200); doc.rect(x,y,colW[i],8);
-        doc.text(h, x+1, y+5.5, { maxWidth: colW[i]-2 });
-        x += colW[i];
-      });
+      const drawHeader = (startY) => {
+        let hx = M;
+        headers.forEach((h,i) => {
+          doc.rect(hx, startY, colW[i], 8,"F"); doc.setDrawColor(180,180,200); doc.rect(hx,startY,colW[i],8);
+          doc.setFont("helvetica","bold"); doc.setFontSize(5.5);
+          doc.text(h, hx+1, startY+5.5, { maxWidth: colW[i]-2 });
+          hx += colW[i];
+        });
+      };
+      drawHeader(y);
       y += 9;
 
       doc.setFont("helvetica","normal"); doc.setFontSize(5);
       rows.forEach((r, ri) => {
-        if (y > 190) { doc.addPage(); y = M; }
+        if (y > PH_A3 - 22) { doc.addPage(); y = M; drawHeader(y); y += 9; }
         if (ri % 2 === 0) { doc.setFillColor(248,249,255); x=M; keys.forEach((_,i) => { doc.rect(x,y,colW[i],7,"F"); x+=colW[i]; }); }
         x = M;
         keys.forEach((k,i) => {
           doc.setDrawColor(210,210,225); doc.rect(x,y,colW[i],7);
+          doc.setFont("helvetica","normal"); doc.setFontSize(5);
           doc.text(String(r[k]).slice(0,35), x+1, y+4.5, { maxWidth: colW[i]-2 });
           x += colW[i];
         });
@@ -2016,8 +2029,8 @@ export default function App() {
       const pc = doc.internal.getNumberOfPages();
       for (let pg=1; pg<=pc; pg++) {
         doc.setPage(pg); doc.setFont("helvetica","italic"); doc.setFontSize(6); doc.setTextColor(150,150,150);
-        doc.text("SkyVigilance SafetyDB — For training purposes only — Not for regulatory submission", M, 200-5);
-        doc.text(`Page ${pg} of ${pc}`, PW-M-20, 200-5);
+        doc.text("SkyVigilance SafetyDB — For training purposes only — Not for regulatory submission", M, PH_A3-5);
+        doc.text(`Page ${pg} of ${pc}`, PW-M-20, PH_A3-5);
         doc.setTextColor(0,0,0);
       }
       doc.save(`LineListing_${new Date().toISOString().slice(0,10)}.pdf`);
@@ -2026,11 +2039,11 @@ export default function App() {
   };
 
   const LineListing = () => {
-    const [filter, setFilter] = useState("");
-    const [sortKey, setSortKey] = useState("receiptDate");
-    const [sortDir, setSortDir] = useState("desc");
-    const [stepFilter, setStepFilter] = useState("all");
-    const [seriousFilter, setSeriousFilter] = useState("all");
+    const filter        = llFilter;
+    const sortKey       = llSortKey;
+    const sortDir       = llSortDir;
+    const stepFilter    = llStepFilter;
+    const seriousFilter = llSeriousFilter;
 
     const rows = lineListingRows().filter(r => {
       const txt = filter.toLowerCase();
@@ -2053,7 +2066,10 @@ export default function App() {
     });
 
     const Th = ({ k, label, w="auto" }) => (
-      <th onClick={() => { setSortKey(k); setSortDir(d => k===sortKey ? (d==="asc"?"desc":"asc") : "asc"); }}
+      <th onClick={() => {
+            if (k === sortKey) { setLlSortDir(d => d === "asc" ? "desc" : "asc"); }
+            else { setLlSortKey(k); setLlSortDir("asc"); }
+          }}
         className="px-2 py-2 text-left text-xs font-bold text-indigo-900 uppercase tracking-wide cursor-pointer whitespace-nowrap hover:bg-indigo-100 transition"
         style={{ minWidth: w }}>
         {label}{sortKey===k ? (sortDir==="asc"?" ↑":" ↓") : ""}
@@ -2089,14 +2105,14 @@ export default function App() {
           <div className="bg-indigo-50 border-b border-indigo-200 px-6 py-3 flex items-center gap-4 flex-shrink-0">
             <input placeholder="Search case #, drug, PT, country, initials…"
               className="border border-indigo-200 rounded-lg px-3 py-1.5 text-sm w-72 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              value={filter} onChange={e => setFilter(e.target.value)} />
+              value={filter} onChange={e => setLlFilter(e.target.value)} />
             <select className="border border-indigo-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              value={stepFilter} onChange={e => setStepFilter(e.target.value)}>
+              value={stepFilter} onChange={e => setLlStepFilter(e.target.value)}>
               <option value="all">All statuses</option>
               {statuses.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
             <select className="border border-indigo-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              value={seriousFilter} onChange={e => setSeriousFilter(e.target.value)}>
+              value={seriousFilter} onChange={e => setLlSeriousFilter(e.target.value)}>
               <option value="all">All (serious + non)</option>
               <option value="serious">Serious only</option>
               <option value="nonserious">Non-serious only</option>
