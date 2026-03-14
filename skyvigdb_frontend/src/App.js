@@ -161,7 +161,7 @@ function SearchPanel({ cases, onOpenCase }) {
             <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Case Number</label>
             <input
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 w-full"
-              placeholder="e.g. PV-1718..."
+              placeholder="e.g. Pharmacovigilance-1718..."
               value={qCase}
               onChange={e => setQCase(e.target.value)}
             />
@@ -255,8 +255,6 @@ function SearchPanel({ cases, onOpenCase }) {
     </div>
   );
 }
-
-
 
 export default function App() {
   const [user, setUser]           = useState(null);
@@ -369,7 +367,6 @@ export default function App() {
 
   const isMyCase = (c) => c.currentStep === user.step;
 
-  // FIXED: full fuzzy duplicate detection via backend
   const detectDuplicate = async (silent = false) => {
     const t     = form.triage   || {};
     const drug  = (form.products || [])[0]?.name  || "";
@@ -544,7 +541,6 @@ export default function App() {
     setForm(f => ({ ...f, medical: { ...m, naranjScore:score, naranjResult:cat } }));
   };
 
-  // FIXED: Full medical history in narrative (free-text + all otherHistory entries + MedDRA-coded PT)
   const buildMedHistoryText = (p) => {
     const parts = [];
     if (p.medHistory) parts.push(p.medHistory);
@@ -569,7 +565,7 @@ export default function App() {
     const p   = form.patient  || {};
     const d   = (form.products || [{}])[0];
     const e   = (form.events   || [{}])[0];
-    const g   = form.general   || {};
+    const g   = form.general  || {};
     const t   = form.triage    || {};
     const med = form.medical   || {};
     const medHistoryDisplay = buildMedHistoryText(p);
@@ -594,7 +590,6 @@ export default function App() {
     setForm(f => ({ ...f, narrative: text }));
   };
 
-  // FIXED CIOMS — narrative now renders correctly with page overflow handling
   const exportCIOMS = () => {
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     const PW = 210, PH = 297, M = 10, CW = PW - M * 2;
@@ -672,7 +667,6 @@ export default function App() {
     doc.setFont("helvetica","normal"); doc.setFontSize(8);
     doc.text(doc.splitTextToSize(p.concomitant||"None reported",CW-4).slice(0,3),M+1,y+9); y += 19;
 
-    // Full medical history in CIOMS Section 23 (FIXED)
     const histText23 = buildMedHistoryText(p);
     box(M,y,CW,22); lbl("23. OTHER RELEVANT HISTORY:",M+1,y+4);
     doc.setFont("helvetica","normal"); doc.setFontSize(8);
@@ -704,7 +698,6 @@ export default function App() {
       box(M+120,y,70,10); lbl("Seriousness",M+121,y+3.5); fld(autoSerious()?"SERIOUS":"Non-serious",M+121,y+8,68); y += 11;
     }
 
-    // FIXED: Narrative with proper page-overflow handling
     const narrativeText = form.narrative || "";
     if (narrativeText) {
       ensureSpace(50);
@@ -732,7 +725,6 @@ export default function App() {
     doc.save("CIOMS_I_"+(selected?.caseNumber||"case")+".pdf");
   };
 
-  // NEW: MedWatch FDA 3500 PDF export
   const exportMedWatch = () => {
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     const PW=210, PH=297, M=10, CW=PW-M*2;
@@ -752,7 +744,6 @@ export default function App() {
     let y = M;
     const ensureSpace = (h) => { if (y+h > PH-12) { doc.addPage(); y = M; } };
 
-    // Header
     doc.setFillColor(0,102,204); doc.rect(M,y,CW,16,"F");
     doc.setTextColor(255,255,255); doc.setFont("helvetica","bold"); doc.setFontSize(9);
     doc.text("U.S. DEPARTMENT OF HEALTH AND HUMAN SERVICES",M+2,y+5);
@@ -766,7 +757,6 @@ export default function App() {
     doc.text("Case: "+na(selected?.caseNumber)+"   |   Generated: "+new Date().toLocaleDateString("en-GB")+"   |   SkyVigilance Training Platform — For training purposes only",M,y+3);
     doc.setTextColor(0,0,0); y += 6;
 
-    // Section A: Patient
     hdrBlue("A.  PATIENT INFORMATION",M,y,CW); y += 7;
     const initials=val(p.initials||t.patientInitials);
     box(M,y,52,15); lbl("1. Patient Identifier",M+1,y+3.5); fld(initials||"—",M+1,y+11,50);
@@ -777,7 +767,6 @@ export default function App() {
     box(M+110,y,30,15); lbl("4. Weight",M+111,y+3.5); fld(p.weight?p.weight+" kg":"—",M+111,y+11,28);
     box(M+140,y,50,15); lbl("5. Race / Ethnicity",M+141,y+3.5); fld(p.ethnicity||p.race||"—",M+141,y+11,48); y += 16;
 
-    // Section B: Adverse Event
     ensureSpace(55); hdrBlue("B.  ADVERSE EVENT, PRODUCT PROBLEM",M,y,CW); y += 7;
     box(M,y,80,22); lbl("1. Type of Report",M+1,y+4);
     chkBox(true,M+1,y+11); doc.setFontSize(7); doc.text("Adverse Event",M+5,y+11);
@@ -794,11 +783,10 @@ export default function App() {
 
     box(M,y,95,12); lbl("3. Date of Adverse Event (DD/MM/YYYY)",M+1,y+3.5);
     const op2=(ev.onsetDate||"").split("-");
-    fld(op2.length===3?op2[2]+"/"+op2[1]+"/"+op2[0]:na(ev.onsetDate),M+1,y+10,93);
+    fld(op2.length===3?op2[2]+"/"+op2[1]+op2[0]:na(ev.onsetDate),M+1,y+10,93);
     box(M+95,y,95,12); lbl("4. Date of this Report",M+96,y+3.5);
     fld(new Date().toLocaleDateString("en-GB"),M+96,y+10,93); y += 13;
 
-    // B5: Narrative — uses saved narrative or falls back to event term + PT
     const narrativeText = form.narrative || (ev.term ? `Verbatim: ${ev.term}${ev.pt ? `\nMedDRA PT: ${ev.pt} (${ev.pt_code||""}) | SOC: ${ev.soc||""}` : ""}` : "");
     const narLn2 = doc.splitTextToSize(narrativeText||"—", CW-4);
     const narBoxH2 = Math.min(70, Math.max(25, narLn2.length * 4.5 + 10));
@@ -816,7 +804,6 @@ export default function App() {
     ensureSpace(10); doc.setFont("helvetica","italic"); doc.setFontSize(7); doc.setTextColor(160,160,160);
     doc.text("C.  SUSPECT MEDICAL DEVICE — Not applicable (drug / biologic case)",M+2,y+5); doc.setTextColor(0,0,0); y += 8;
 
-    // Section D: Products
     ensureSpace(30); hdrBlue("D.  SUSPECT PRODUCT(S)",M,y,CW); y += 7;
     const colW=[42,22,22,24,42,38];
     const colHd=["Name (Brand / Generic)","Dose","Frequency","Route","Therapy Dates (from / to)","Indication"];
@@ -834,12 +821,10 @@ export default function App() {
       } else { y+=rowH+1; }
     }); y+=3;
 
-    // Section E: Concomitant
     ensureSpace(22); hdrBlue("E.  CONCOMITANT MEDICAL PRODUCTS AND THERAPY DATES",M,y,CW); y+=7;
     box(M,y,CW,18); doc.setFont("helvetica","normal"); doc.setFontSize(8);
     doc.text(doc.splitTextToSize(val(p.concomitant)||"None reported",CW-4).slice(0,3),M+1,y+5); y+=20;
 
-    // Section F: Lab / Medical History — FIXED: full history
     ensureSpace(30); hdrBlue("F.  RELEVANT TESTS / LAB DATA / MEDICAL HISTORY",M,y,CW); y+=7;
     const histFull = buildMedHistoryText(p);
     const labSummary=(p.labData||[]).filter(l=>l.testName&&l.result).map(l=>`${l.testName} ${l.result}${l.units?" "+l.units:""}${l.assessment&&l.assessment!=="Normal"?" ("+l.assessment+")":""}`).join("; ");
@@ -848,7 +833,6 @@ export default function App() {
     box(M,y,CW,fBoxH); doc.setFont("helvetica","normal"); doc.setFontSize(8);
     doc.text(fLn.slice(0,Math.floor(fBoxH/4.5)),M+1,y+5); y+=fBoxH+4;
 
-    // Section G: Reporter
     ensureSpace(45); hdrBlue("G.  REPORTER",M,y,CW); y+=7;
     const repName=([val(t.reporterFirst||g.reporter?.firstName),val(t.reporterLast||g.reporter?.lastName)].filter(Boolean).join(" "))||"—";
     const repInst=val(t.institution||g.reporter?.institution)||"—";
@@ -865,7 +849,6 @@ export default function App() {
     box(M,y,CW,10); lbl("Also Submitted to:",M+1,y+3.5);
     fld("SkyVigilance SafetyDB Training Platform",M+1,y+8,CW-4); y+=12;
 
-    // Medical Assessment supplementary
     if (ev.pt||m.causality||m.listedness) {
       ensureSpace(28);
       doc.setFillColor(240,240,255); doc.rect(M,y,CW,5,"F");
@@ -911,9 +894,7 @@ export default function App() {
       if (!raw) return "—";
       const s = String(raw).trim();
       if (!s || s === "null" || s === "undefined") return "—";
-      // Already formatted by backend ("22 Feb 2025, 14:30") — return directly
       if (/^\d{1,2} \w{3} \d{4}/.test(s)) return s;
-      // ISO-style string — parse with regex, never with new Date()
       const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
       if (m) {
         const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -958,12 +939,10 @@ export default function App() {
     );
   };
 
-  /* ---- STEP 1: TRIAGE FORM ---- */
   const TriageForm = () => (
     <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-5 mb-6">
       <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4">📥 New Case — Triage / Initial Book-in</h3>
 
-      {/* Duplicate Detection Banner */}
       {dupResults !== null && (
         <div className={`rounded-xl border px-4 py-3 mb-4 text-xs ${dupResults.length>0 ? "bg-amber-50 border-amber-300" : "bg-green-50 border-green-300"}`}>
           {dupResults.length > 0 ? (
@@ -1055,7 +1034,6 @@ export default function App() {
     </div>
   );
 
-  /* ---- STEP 2: DATA ENTRY TABS ---- */
   const DATA_TABS = [
     { id:"general",  label:"General" },
     { id:"patient",  label:"Patient" },
@@ -1071,7 +1049,6 @@ export default function App() {
 
     return (
       <div>
-        {/* Tab Nav */}
         <div className="flex gap-1 mb-4 border-b border-gray-200 pb-0">
           {DATA_TABS.map(t2 => (
             <button key={t2.id} onClick={() => setTab(t2.id)}
@@ -1082,7 +1059,6 @@ export default function App() {
           ))}
         </div>
 
-        {/* GENERAL TAB */}
         {tab === "general" && (
           <div>
             <SectionHead>Report Identifiers</SectionHead>
@@ -1144,7 +1120,6 @@ export default function App() {
           </div>
         )}
 
-        {/* PATIENT TAB */}
         {tab === "patient" && (
           <div>
             <SectionHead>Demographics</SectionHead>
@@ -1187,7 +1162,6 @@ export default function App() {
               onClear={() => setForm(f => ({ ...f, patient:{ ...f.patient, medHistoryPt:"", medHistoryPtCode:"" } }))}
             />
 
-            {/* Structured Other History Entries */}
             <div className="mt-3">
               <div className="text-xs font-bold text-teal-700 uppercase tracking-widest mb-2">Structured History Entries</div>
               {(form.patient?.otherHistory||[{}]).map((h,idx) => (
@@ -1225,7 +1199,6 @@ export default function App() {
             {F("Concomitant Medications", TA({ placeholder:"List concomitant drugs with dose and indication…", rows:3,
                 value:form.patient?.concomitant||"", onChange:e => setNested("patient","concomitant",e.target.value) }))}
 
-            {/* Lab Data */}
             <div className="mt-3">
               <div className="text-xs font-bold text-teal-700 uppercase tracking-widest mb-2">Lab / Test Results</div>
               {(form.patient?.labData||[{}]).map((lab,idx) => (
@@ -1269,7 +1242,6 @@ export default function App() {
           </div>
         )}
 
-        {/* PRODUCTS TAB */}
         {tab === "products" && (() => {
           const products = (form.products?.length) ? form.products : [{}];
           return (
@@ -1361,7 +1333,6 @@ export default function App() {
           );
         })()}
 
-        {/* EVENTS TAB */}
         {tab === "events" && (() => {
           const events = (form.events?.length) ? form.events : [{}];
           const setEv = (idx, key, val2) => {
@@ -1496,7 +1467,6 @@ export default function App() {
     );
   };
 
-  /* ---- STEP 3: MEDICAL REVIEW ---- */
   const MedicalForm = () => {
     const m = form.medical || {};
     return (
@@ -1674,7 +1644,6 @@ export default function App() {
     );
   };
 
-  /* ---- STEP 4: QUALITY REVIEW ---- */
   const QualityForm = () => {
     const q=form.quality||{}, p=form.patient||{}, d2=(form.products||[{}])[0], e2=(form.events||[{}])[0], m=form.medical||{};
     const qcItems = [
@@ -1751,7 +1720,6 @@ export default function App() {
     );
   };
 
-  /* ---- READ-ONLY SUMMARY ---- */
   const ReadOnlySummary = () => (
     <div className="space-y-3">
       <div className="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-2 rounded-lg font-medium">
@@ -1775,7 +1743,6 @@ export default function App() {
     </div>
   );
 
-  /* ---- STEP 5: SUBMISSIONS ---- */
   const SubmissionsForm = () => {
     const sub = form.submissions || {};
     const selected_agencies = sub.agencies || {};
@@ -1829,7 +1796,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Progress bar */}
         {selectedCount > 0 && (
           <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
             <div
@@ -1839,7 +1805,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Agency cards */}
         <div className="space-y-3">
           {AGENCIES.map(agency => {
             const ag = selected_agencies[agency.id] || {};
@@ -1851,7 +1816,6 @@ export default function App() {
                   isSubmitted  ? "border-green-400 bg-green-50" :
                   isSelected   ? "border-violet-400 bg-violet-50" :
                                  "border-gray-200 bg-white"}`}>
-                {/* Agency header row */}
                 <div className="flex items-center gap-3 px-4 py-3 cursor-pointer" onClick={() => toggleAgency(agency.id)}>
                   <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all
                     ${isSelected ? "bg-violet-600 border-violet-600" : "border-gray-300 bg-white"}`}>
@@ -1871,7 +1835,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Expanded fields when selected */}
                 {isSelected && (
                   <div className="px-4 pb-4 border-t border-gray-100 pt-3">
                     <div className="grid grid-cols-3 gap-3 mb-2">
@@ -1957,7 +1920,6 @@ export default function App() {
     );
   };
 
-  /* ---- STEP 6: CASE ARCHIVAL ---- */
   const ArchivalForm = () => {
     const arc = form.archival || {};
     const sub = form.submissions || {};
@@ -2069,7 +2031,6 @@ export default function App() {
     );
   };
 
-  /* ---- LINE LISTING ---- */
   const lineListingRows = () => cases.map(c => {
     const t = c.triage    || {};
     const g = c.general   || {};
@@ -2084,10 +2045,10 @@ export default function App() {
     );
     return {
       caseNumber:   c.caseNumber,
-      receiptDate:  t.receiptDate   || "—",
-      country:      t.country       || "—",
-      reportType:   t.reportType    || g.reportType || "—",
-      patientInitials: p.initials   || t.patientInitials || "—",
+      receiptDate:  t.receiptDate    || "—",
+      country:      t.country        || "—",
+      reportType:   t.reportType     || g.reportType || "—",
+      patientInitials: p.initials    || t.patientInitials || "—",
       age:          p.age ? `${p.age} ${p.ageUnit || "yrs"}` : "—",
       sex:          p.sex            || "—",
       drug:         d.name           || "—",
@@ -2149,7 +2110,6 @@ export default function App() {
       doc.setTextColor(0,0,0);
 
       const colW = [16,18,18,14,12,10,8,22,18,14,12,16,14,14,22,20,10,16,14,24,14,14,16,16,16];
-      // Total = 388mm — fits within A3 landscape usable width of 400mm (420 - 2×10 margin)
       const PH_A3 = 297;
       let x = M, y = M+14;
       doc.setFont("helvetica","bold"); doc.setFontSize(5.5); doc.setFillColor(230,232,240);
@@ -2191,7 +2151,7 @@ export default function App() {
     }
   };
 
-  const LineListing = () => {
+  const renderLineListing = () => {
     const filter        = llFilter;
     const sortKey       = llSortKey;
     const sortDir       = llSortDir;
@@ -2218,8 +2178,8 @@ export default function App() {
       return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
     });
 
-    const Th = ({ k, label, w="auto" }) => (
-      <th onClick={() => {
+    const renderTh = (k, label, w="auto") => (
+      <th key={k} onClick={() => {
             if (k === sortKey) { setLlSortDir(d => d === "asc" ? "desc" : "asc"); }
             else { setLlSortKey(k); setLlSortDir("asc"); }
           }}
@@ -2234,7 +2194,6 @@ export default function App() {
     return (
       <div className="fixed inset-0 bg-black bg-opacity-60 flex flex-col z-50">
         <div className="bg-white flex flex-col flex-1 overflow-hidden">
-          {/* Header */}
           <div className="bg-indigo-900 px-6 py-4 flex items-center justify-between flex-shrink-0">
             <div>
               <div className="text-white font-bold text-lg">📊 ICSR Line Listing</div>
@@ -2254,7 +2213,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Filters */}
           <div className="bg-indigo-50 border-b border-indigo-200 px-6 py-3 flex items-center gap-4 flex-shrink-0">
             <input placeholder="Search case #, drug, PT, country, initials…"
               className="border border-indigo-200 rounded-lg px-3 py-1.5 text-sm w-72 focus:outline-none focus:ring-2 focus:ring-indigo-300"
@@ -2272,36 +2230,35 @@ export default function App() {
             </select>
           </div>
 
-          {/* Table */}
           <div className="overflow-auto flex-1">
             <table className="min-w-max w-full text-xs border-collapse">
               <thead className="bg-indigo-50 sticky top-0 z-10">
                 <tr>
-                  <Th k="caseNumber"     label="Case #"        w="90px" />
-                  <Th k="receiptDate"    label="Receipt Date"  w="90px" />
-                  <Th k="country"        label="Country"       w="90px" />
-                  <Th k="reportType"     label="Report Type"   w="80px" />
-                  <Th k="patientInitials" label="Patient"      w="60px" />
-                  <Th k="age"            label="Age"           w="60px" />
-                  <Th k="sex"            label="Sex"           w="50px" />
-                  <Th k="drug"           label="Drug (Brand)"  w="110px" />
-                  <Th k="genericName"    label="Generic"       w="100px" />
-                  <Th k="dose"           label="Dose"          w="70px" />
-                  <Th k="route"          label="Route"         w="70px" />
-                  <Th k="indication"     label="Indication"    w="100px" />
-                  <Th k="startDate"      label="Drug Start"    w="80px" />
-                  <Th k="stopDate"       label="Drug Stop"     w="80px" />
-                  <Th k="eventVerbatim"  label="Event Verbatim" w="130px" />
-                  <Th k="pt"             label="MedDRA PT"     w="120px" />
-                  <Th k="ptCode"         label="PT Code"       w="70px" />
-                  <Th k="soc"            label="SOC"           w="110px" />
-                  <Th k="onsetDate"      label="Onset Date"    w="80px" />
-                  <Th k="serious"        label="Seriousness"   w="130px" />
-                  <Th k="causality"      label="Causality"     w="90px" />
-                  <Th k="listedness"     label="Listedness"    w="90px" />
-                  <Th k="outcome"        label="Outcome"       w="110px" />
-                  <Th k="reporter"       label="Reporter Qual" w="90px" />
-                  <Th k="status"         label="WF Status"     w="100px" />
+                  {renderTh("caseNumber", "Case #", "90px")}
+                  {renderTh("receiptDate", "Receipt Date", "90px")}
+                  {renderTh("country", "Country", "90px")}
+                  {renderTh("reportType", "Report Type", "80px")}
+                  {renderTh("patientInitials", "Patient", "60px")}
+                  {renderTh("age", "Age", "60px")}
+                  {renderTh("sex", "Sex", "50px")}
+                  {renderTh("drug", "Drug (Brand)", "110px")}
+                  {renderTh("genericName", "Generic", "100px")}
+                  {renderTh("dose", "Dose", "70px")}
+                  {renderTh("route", "Route", "70px")}
+                  {renderTh("indication", "Indication", "100px")}
+                  {renderTh("startDate", "Drug Start", "80px")}
+                  {renderTh("stopDate", "Drug Stop", "80px")}
+                  {renderTh("eventVerbatim", "Event Verbatim", "130px")}
+                  {renderTh("pt", "MedDRA PT", "120px")}
+                  {renderTh("ptCode", "PT Code", "70px")}
+                  {renderTh("soc", "SOC", "110px")}
+                  {renderTh("onsetDate", "Onset Date", "80px")}
+                  {renderTh("serious", "Seriousness", "130px")}
+                  {renderTh("causality", "Causality", "90px")}
+                  {renderTh("listedness", "Listedness", "90px")}
+                  {renderTh("outcome", "Outcome", "110px")}
+                  {renderTh("reporter", "Reporter Qual", "90px")}
+                  {renderTh("status", "WF Status", "100px")}
                 </tr>
               </thead>
               <tbody>
@@ -2356,7 +2313,6 @@ export default function App() {
     );
   };
 
-  /* ---- SEARCH PANEL ---- */
   const renderModalForm = () => {
     if (!selected) return null;
     if (selected.currentStep > 6) return ReadOnlySummary();
@@ -2368,12 +2324,8 @@ export default function App() {
     if (selected.currentStep === 6) return ArchivalForm();
   };
 
-  /* ==================================================
-     MAIN RENDER
-  ================================================== */
   return (
     <div className="min-h-screen bg-sky-50 font-sans flex flex-col">
-      {/* Topbar */}
       <div className="bg-blue-900 border-b border-blue-800 px-6 py-3 flex justify-between items-center shadow-sm sticky top-0 z-30">
         <div className="flex items-center gap-3">
           <span className="text-xl">🛡️</span>
@@ -2393,7 +2345,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* Toast */}
       {msg && (
         <div className={`fixed top-16 right-4 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-semibold
           ${msg.type==="error"?"bg-red-100 text-red-700 border border-red-200":"bg-green-100 text-green-700 border border-green-200"}`}>
@@ -2401,7 +2352,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Sub-nav */}
       <div className="bg-white border-b border-gray-200 px-6 flex items-center gap-1">
         {[
           { id:"dashboard", label:"📋 Dashboard" },
@@ -2417,7 +2367,6 @@ export default function App() {
         ))}
       </div>
 
-      {/* Search View */}
       {activeView === "search" && (
         <SearchPanel
           cases={cases}
@@ -2429,9 +2378,7 @@ export default function App() {
         />
       )}
 
-      {/* Dashboard View */}
       {activeView === "dashboard" && <div className="max-w-7xl mx-auto px-6 py-6 flex-1 w-full">
-        {/* Dashboard Chart */}
         <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-5 mb-6">
           <div className="flex justify-between items-center mb-3">
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Workflow Dashboard</h3>
@@ -2449,10 +2396,8 @@ export default function App() {
           </div>
         </div>
 
-        {/* Triage Book-in */}
         {user.step === 1 && TriageForm()}
 
-        {/* Kanban */}
         <div className="grid grid-cols-6 gap-3">
           {STAGES.map(stage => {
             const stageCases = cases.filter(c => c.currentStep === stage.step);
@@ -2487,7 +2432,6 @@ export default function App() {
           })}
         </div>
 
-        {/* Closed / Archived Cases */}
         {(() => {
           const closedCases = cases.filter(c => c.currentStep >= 7);
           if (closedCases.length === 0) return null;
@@ -2521,17 +2465,15 @@ export default function App() {
         })()}
       </div>}
 
-      {showLineListing && <LineListing />}
+      {showLineListing && renderLineListing()}
 
       <footer className="bg-blue-900 border-t border-blue-800 py-3 text-center">
         <p className="text-xs text-blue-300">A VigiServe Foundation Initiative</p>
       </footer>
 
-      {/* MODAL */}
       {selected && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-start pt-8 pb-8 z-40 overflow-y-auto">
           <div className="bg-white rounded-2xl w-[760px] shadow-2xl mx-4 flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
             <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-start sticky top-0 bg-white rounded-t-2xl z-10">
               <div>
                 <div className="font-bold text-gray-800 text-base">{selected.caseNumber}</div>
@@ -2584,7 +2526,6 @@ export default function App() {
                   className="text-gray-400 hover:text-red-500 text-2xl leading-none transition ml-1">✕</button>
               </div>
             </div>
-            {/* Modal Body */}
             <div className="p-6 overflow-y-auto flex-1">
               {showAudit ? renderAuditTrail() : renderModalForm()}
             </div>
