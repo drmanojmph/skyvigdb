@@ -146,6 +146,10 @@ export default function App() {
   const [dupResults, setDupResults]     = useState(null);
   const [dupLoading, setDupLoading]     = useState(false);
   const [showLineListing, setShowLineListing] = useState(false);
+  const [activeView,      setActiveView]      = useState("dashboard");
+  const [srchCase,    setSrchCase]    = useState("");
+  const [srchProduct, setSrchProduct] = useState("");
+  const [srchCountry, setSrchCountry] = useState("");
   const [llFilter,        setLlFilter]        = useState("");
   const [llSortKey,       setLlSortKey]       = useState("receiptDate");
   const [llSortDir,       setLlSortDir]       = useState("desc");
@@ -195,6 +199,10 @@ export default function App() {
     setTab("general");
     setMsg(null);
     setShowLineListing(false);
+    setActiveView("dashboard");
+    setSrchCase("");
+    setSrchProduct("");
+    setSrchCountry("");
     setLlFilter("");
     setLlSortKey("receiptDate");
     setLlSortDir("desc");
@@ -2224,6 +2232,149 @@ export default function App() {
     );
   };
 
+  /* ---- SEARCH PANEL ---- */
+  const SearchPanel = () => {
+    const qCase    = srchCase;
+    const qProduct = srchProduct;
+    const qCountry = srchCountry;
+
+    const allCases = cases; // already loaded, includes closed
+
+    const results = allCases.filter(c => {
+      const caseNum  = (c.caseNumber || c.id || "").toLowerCase();
+      const country  = (c.triage?.country || "").toLowerCase();
+      const products = (c.products || []).map(p => (p.name || "") + " " + (p.genericName || "")).join(" ").toLowerCase();
+
+      const matchCase    = !qCase.trim()    || caseNum.includes(qCase.trim().toLowerCase());
+      const matchProduct = !qProduct.trim() || products.includes(qProduct.trim().toLowerCase());
+      const matchCountry = !qCountry.trim() || country.includes(qCountry.trim().toLowerCase());
+
+      return matchCase && matchProduct && matchCountry;
+    });
+
+    const hasQuery = qCase.trim() || qProduct.trim() || qCountry.trim();
+
+    const openCase = (c) => {
+      setSelected(c); setForm(c); setShowAudit(false);
+      setTab("general"); setMeddraQuery(""); setMeddraResults([]);
+      fetchAudit(c.id);
+    };
+
+    const stepColor = (step) => {
+      const map = {1:"bg-blue-100 text-blue-800", 2:"bg-teal-100 text-teal-800",
+                   3:"bg-purple-100 text-purple-800", 4:"bg-orange-100 text-orange-800",
+                   5:"bg-violet-100 text-violet-800", 6:"bg-gray-100 text-gray-700"};
+      return map[step] || "bg-gray-100 text-gray-600";
+    };
+
+    return (
+      <div className="max-w-7xl mx-auto px-6 py-6 w-full">
+        {/* Search inputs */}
+        <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-5 mb-5">
+          <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4">🔍 Case Search</h3>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Case Number</label>
+              <input
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 w-full"
+                placeholder="e.g. PV-1718…"
+                value={qCase}
+                onChange={e => setSrchCase(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Product / Drug Name</label>
+              <input
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 w-full"
+                placeholder="Brand or generic name"
+                value={qProduct}
+                onChange={e => setSrchProduct(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Country of Incidence</label>
+              <input
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300 w-full"
+                placeholder="e.g. India, Germany…"
+                value={qCountry}
+                onChange={e => setSrchCountry(e.target.value)}
+              />
+            </div>
+          </div>
+          {hasQuery && (
+            <div className="mt-3 flex items-center justify-between">
+              <span className="text-xs text-gray-500">
+                {results.length === 0
+                  ? "No cases match your search."
+                  : `${results.length} case${results.length === 1 ? "" : "s"} found`}
+              </span>
+              <button
+                onClick={() => { setSrchCase(""); setSrchProduct(""); setSrchCountry(""); }}
+                className="text-xs text-gray-400 hover:text-red-500 transition font-medium">
+                ✕ Clear
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Results */}
+        {hasQuery && results.length > 0 && (
+          <div className="bg-white rounded-xl shadow-sm border border-blue-100 overflow-hidden">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="bg-indigo-50 border-b border-indigo-100">
+                  <th className="text-left px-4 py-3 text-xs font-bold text-indigo-900 uppercase tracking-wide">Case #</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-indigo-900 uppercase tracking-wide">Receipt Date</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-indigo-900 uppercase tracking-wide">Country</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-indigo-900 uppercase tracking-wide">Product</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-indigo-900 uppercase tracking-wide">Event (verbatim)</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-indigo-900 uppercase tracking-wide">MedDRA PT</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-indigo-900 uppercase tracking-wide">Reporter</th>
+                  <th className="text-left px-4 py-3 text-xs font-bold text-indigo-900 uppercase tracking-wide">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((c, i) => {
+                  const t  = c.triage    || {};
+                  const ev = (c.events   || [{}])[0] || {};
+                  const d  = (c.products || [{}])[0] || {};
+                  return (
+                    <tr key={c.id}
+                      onClick={() => openCase(c)}
+                      className={`border-b border-gray-100 cursor-pointer hover:bg-indigo-50 transition ${i%2===0?"bg-white":"bg-gray-50/50"}`}>
+                      <td className="px-4 py-3 font-mono font-semibold text-indigo-700 whitespace-nowrap">{c.caseNumber}</td>
+                      <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{t.receiptDate || "—"}</td>
+                      <td className="px-4 py-3 text-gray-700">{t.country || "—"}</td>
+                      <td className="px-4 py-3 font-medium text-gray-800">{d.name || "—"}{d.genericName ? <span className="text-gray-400 font-normal"> / {d.genericName}</span> : ""}</td>
+                      <td className="px-4 py-3 text-gray-600 italic max-w-xs truncate">{ev.term || "—"}</td>
+                      <td className="px-4 py-3 font-semibold text-purple-800">{ev.pt || "—"}</td>
+                      <td className="px-4 py-3 text-gray-500">{t.qualification || "—"}</td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${stepColor(c.currentStep)}`}>
+                          {c.status || "—"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Empty state before any search */}
+        {!hasQuery && (
+          <div className="text-center py-20 text-gray-300">
+            <div className="text-5xl mb-3">🔍</div>
+            <div className="text-sm font-medium text-gray-400">Enter a case number, product name, or country above to search across all cases.</div>
+            <div className="text-xs text-gray-300 mt-1">Searches across active, submitted, and archived cases.</div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderModalForm = () => {
     if (!selected) return null;
     if (selected.currentStep > 6) return ReadOnlySummary();
@@ -2268,7 +2419,27 @@ export default function App() {
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-6 py-6 flex-1 w-full">
+      {/* Sub-nav */}
+      <div className="bg-white border-b border-gray-200 px-6 flex items-center gap-1">
+        {[
+          { id:"dashboard", label:"📋 Dashboard" },
+          { id:"search",    label:"🔍 Search" },
+        ].map(v => (
+          <button key={v.id} onClick={() => setActiveView(v.id)}
+            className={`text-sm px-4 py-3 font-semibold border-b-2 transition
+              ${activeView===v.id
+                ? "border-indigo-600 text-indigo-700"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"}`}>
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Search View */}
+      {activeView === "search" && <SearchPanel />}
+
+      {/* Dashboard View */}
+      {activeView === "dashboard" && <div className="max-w-7xl mx-auto px-6 py-6 flex-1 w-full">
         {/* Dashboard Chart */}
         <div className="bg-white rounded-xl shadow-sm border border-blue-100 p-5 mb-6">
           <div className="flex justify-between items-center mb-3">
@@ -2358,6 +2529,7 @@ export default function App() {
           );
         })()}
       </div>
+      </div>}
 
       {showLineListing && <LineListing />}
 
