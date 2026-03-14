@@ -145,6 +145,7 @@ export default function App() {
   const [meddraTarget, setMeddraTarget] = useState(null);
   const [dupResults, setDupResults]     = useState(null);
   const [dupLoading, setDupLoading]     = useState(false);
+  const [showLineListing, setShowLineListing] = useState(false);
 
   useEffect(() => { if (user) { fetchCases(); axios.get(API + "/health").catch(() => {}); } }, [user]);
 
@@ -290,6 +291,20 @@ export default function App() {
         _audit: { performedBy: user.username, role: user.role }
       });
       setSelected(null); setForm({}); fetchCases(); flash("↩️ Case returned to Data Entry.");
+    } catch { flash("❌ Routing failed.", "error"); }
+  };
+
+  const returnCaseToQuality = async () => {
+    if (!isMyCase(selected)) { alert("⛔ You can only route cases assigned to your role step."); return; }
+    const reason = window.prompt("Return reason (required):");
+    if (!reason) return;
+    try {
+      await axios.put(API + "/cases/" + selected.id, {
+        ...form,
+        submissions: { ...(form.submissions || {}), routeBackToQuality: true, returnReason: reason },
+        _audit: { performedBy: user.username, role: user.role }
+      });
+      setSelected(null); setForm({}); fetchCases(); flash("↩️ Case returned to Quality Review.");
     } catch { flash("❌ Routing failed.", "error"); }
   };
 
@@ -1896,19 +1911,291 @@ export default function App() {
     );
   };
 
+  /* ---- LINE LISTING ---- */
+  const lineListingRows = () => cases.map(c => {
+    const t = c.triage    || {};
+    const g = c.general   || {};
+    const p = c.patient   || {};
+    const d = (c.products || [{}])[0] || {};
+    const e = (c.events   || [{}])[0] || {};
+    const m = c.medical   || {};
+    const s = g.seriousness || t.seriousness || {};
+    const seriousFlags = Object.entries(s).filter(([,v]) => v).map(([k]) =>
+      ({ death:"Death", lifeThreatening:"Life-threatening", hospitalised:"Hospitalisation",
+         disability:"Disability", congenital:"Congenital anomaly", medSignificant:"Medically significant" }[k] || k)
+    );
+    return {
+      caseNumber:   c.caseNumber,
+      receiptDate:  t.receiptDate   || "—",
+      country:      t.country       || "—",
+      reportType:   t.reportType    || g.reportType || "—",
+      patientInitials: p.initials   || t.patientInitials || "—",
+      age:          p.age ? `${p.age} ${p.ageUnit || "yrs"}` : "—",
+      sex:          p.sex            || "—",
+      drug:         d.name           || "—",
+      genericName:  d.genericName    || "—",
+      dose:         d.dose ? `${d.dose} ${d.doseUnit || ""}`.trim() : "—",
+      route:        d.route          || "—",
+      indication:   d.indication     || "—",
+      startDate:    d.startDate      || "—",
+      stopDate:     d.stopDate       || "—",
+      eventVerbatim: e.term          || "—",
+      pt:           e.pt             || "—",
+      ptCode:       e.pt_code        || "—",
+      soc:          e.soc            || "—",
+      onsetDate:    e.onsetDate      || "—",
+      serious:      seriousFlags.length ? seriousFlags.join("; ") : "Non-serious",
+      causality:    m.causality      || "—",
+      listedness:   m.listedness     || "—",
+      outcome:      e.outcome        || "—",
+      status:       c.status         || "—",
+      reporter:     t.qualification  || "—",
+    };
+  });
+
+  const exportLineListing = (format) => {
+    const rows = lineListingRows();
+    const headers = [
+      "Case #","Receipt Date","Country","Report Type","Patient Initials","Age","Sex",
+      "Drug (Brand)","Generic Name","Dose","Route","Indication","Drug Start","Drug Stop",
+      "Event Verbatim","MedDRA PT","PT Code","SOC","Onset Date",
+      "Seriousness","Causality","Listedness","Outcome","Status","Reporter Qualification"
+    ];
+    const keys = [
+      "caseNumber","receiptDate","country","reportType","patientInitials","age","sex",
+      "drug","genericName","dose","route","indication","startDate","stopDate",
+      "eventVerbatim","pt","ptCode","soc","onsetDate",
+      "serious","causality","listedness","outcome","status","reporter"
+    ];
+
+    if (format === "csv") {
+      const escape = v => `"${String(v).replace(/"/g,'""')}"`;
+      const csv = [headers.map(escape).join(","),
+        ...rows.map(r => keys.map(k => escape(r[k])).join(","))
+      ].join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href = url; a.download = `LineListing_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      flash("📊 Line listing exported as CSV.");
+    } else if (format === "pdf") {
+      const doc = new jsPDF({ orientation:"landscape", unit:"mm", format:"a3" });
+      const PW=420, M=10;
+      doc.setFillColor(30,58,138); doc.rect(M,M,PW-M*2,10,"F");
+      doc.setTextColor(255,255,255); doc.setFont("helvetica","bold"); doc.setFontSize(11);
+      doc.text("SkyVigilance SafetyDB — ICSR Line Listing", M+2, M+7);
+      doc.setFontSize(7);
+      doc.text(`Generated: ${new Date().toLocaleDateString("en-GB")} | Total cases: ${rows.length}`, PW-M-80, M+7);
+      doc.setTextColor(0,0,0);
+
+      const colW = [22,22,22,20,18,14,10,28,22,18,16,20,18,18,28,24,14,20,18,32,18,18,22,22,20];
+      let x = M, y = M+14;
+      doc.setFont("helvetica","bold"); doc.setFontSize(5.5); doc.setFillColor(230,232,240);
+      headers.forEach((h,i) => {
+        doc.rect(x, y, colW[i], 8,"F"); doc.setDrawColor(180,180,200); doc.rect(x,y,colW[i],8);
+        doc.text(h, x+1, y+5.5, { maxWidth: colW[i]-2 });
+        x += colW[i];
+      });
+      y += 9;
+
+      doc.setFont("helvetica","normal"); doc.setFontSize(5);
+      rows.forEach((r, ri) => {
+        if (y > 190) { doc.addPage(); y = M; }
+        if (ri % 2 === 0) { doc.setFillColor(248,249,255); x=M; keys.forEach((_,i) => { doc.rect(x,y,colW[i],7,"F"); x+=colW[i]; }); }
+        x = M;
+        keys.forEach((k,i) => {
+          doc.setDrawColor(210,210,225); doc.rect(x,y,colW[i],7);
+          doc.text(String(r[k]).slice(0,35), x+1, y+4.5, { maxWidth: colW[i]-2 });
+          x += colW[i];
+        });
+        y += 7;
+      });
+
+      const pc = doc.internal.getNumberOfPages();
+      for (let pg=1; pg<=pc; pg++) {
+        doc.setPage(pg); doc.setFont("helvetica","italic"); doc.setFontSize(6); doc.setTextColor(150,150,150);
+        doc.text("SkyVigilance SafetyDB — For training purposes only — Not for regulatory submission", M, 200-5);
+        doc.text(`Page ${pg} of ${pc}`, PW-M-20, 200-5);
+        doc.setTextColor(0,0,0);
+      }
+      doc.save(`LineListing_${new Date().toISOString().slice(0,10)}.pdf`);
+      flash("📄 Line listing exported as PDF.");
+    }
+  };
+
+  const LineListing = () => {
+    const [filter, setFilter] = useState("");
+    const [sortKey, setSortKey] = useState("receiptDate");
+    const [sortDir, setSortDir] = useState("desc");
+    const [stepFilter, setStepFilter] = useState("all");
+    const [seriousFilter, setSeriousFilter] = useState("all");
+
+    const rows = lineListingRows().filter(r => {
+      const txt = filter.toLowerCase();
+      const matchText = !txt ||
+        r.caseNumber.toLowerCase().includes(txt) ||
+        r.drug.toLowerCase().includes(txt) ||
+        r.pt.toLowerCase().includes(txt) ||
+        r.country.toLowerCase().includes(txt) ||
+        r.patientInitials.toLowerCase().includes(txt);
+      const matchStep = stepFilter === "all" || r.status === stepFilter;
+      const matchSerious = seriousFilter === "all"
+        ? true
+        : seriousFilter === "serious"
+          ? r.serious !== "Non-serious"
+          : r.serious === "Non-serious";
+      return matchText && matchStep && matchSerious;
+    }).sort((a,b) => {
+      const av = a[sortKey] || "", bv = b[sortKey] || "";
+      return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+
+    const Th = ({ k, label, w="auto" }) => (
+      <th onClick={() => { setSortKey(k); setSortDir(d => k===sortKey ? (d==="asc"?"desc":"asc") : "asc"); }}
+        className="px-2 py-2 text-left text-xs font-bold text-indigo-900 uppercase tracking-wide cursor-pointer whitespace-nowrap hover:bg-indigo-100 transition"
+        style={{ minWidth: w }}>
+        {label}{sortKey===k ? (sortDir==="asc"?" ↑":" ↓") : ""}
+      </th>
+    );
+
+    const statuses = [...new Set(cases.map(c => c.status).filter(Boolean))];
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-60 flex flex-col z-50">
+        <div className="bg-white flex flex-col flex-1 overflow-hidden">
+          {/* Header */}
+          <div className="bg-indigo-900 px-6 py-4 flex items-center justify-between flex-shrink-0">
+            <div>
+              <div className="text-white font-bold text-lg">📊 ICSR Line Listing</div>
+              <div className="text-indigo-300 text-xs mt-0.5">{rows.length} of {cases.length} cases shown</div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={() => exportLineListing("csv")}
+                className="bg-green-600 hover:bg-green-700 text-white text-xs px-4 py-2 rounded-lg font-semibold transition">
+                ⬇ Export CSV
+              </button>
+              <button onClick={() => exportLineListing("pdf")}
+                className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-4 py-2 rounded-lg font-semibold transition">
+                📄 Export PDF
+              </button>
+              <button onClick={() => setShowLineListing(false)}
+                className="text-indigo-300 hover:text-white text-2xl leading-none transition ml-2">✕</button>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="bg-indigo-50 border-b border-indigo-200 px-6 py-3 flex items-center gap-4 flex-shrink-0">
+            <input placeholder="Search case #, drug, PT, country, initials…"
+              className="border border-indigo-200 rounded-lg px-3 py-1.5 text-sm w-72 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              value={filter} onChange={e => setFilter(e.target.value)} />
+            <select className="border border-indigo-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              value={stepFilter} onChange={e => setStepFilter(e.target.value)}>
+              <option value="all">All statuses</option>
+              {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select className="border border-indigo-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              value={seriousFilter} onChange={e => setSeriousFilter(e.target.value)}>
+              <option value="all">All (serious + non)</option>
+              <option value="serious">Serious only</option>
+              <option value="nonserious">Non-serious only</option>
+            </select>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-auto flex-1">
+            <table className="min-w-max w-full text-xs border-collapse">
+              <thead className="bg-indigo-50 sticky top-0 z-10">
+                <tr>
+                  <Th k="caseNumber"     label="Case #"        w="90px" />
+                  <Th k="receiptDate"    label="Receipt Date"  w="90px" />
+                  <Th k="country"        label="Country"       w="90px" />
+                  <Th k="reportType"     label="Report Type"   w="80px" />
+                  <Th k="patientInitials" label="Patient"      w="60px" />
+                  <Th k="age"            label="Age"           w="60px" />
+                  <Th k="sex"            label="Sex"           w="50px" />
+                  <Th k="drug"           label="Drug (Brand)"  w="110px" />
+                  <Th k="genericName"    label="Generic"       w="100px" />
+                  <Th k="dose"           label="Dose"          w="70px" />
+                  <Th k="route"          label="Route"         w="70px" />
+                  <Th k="indication"     label="Indication"    w="100px" />
+                  <Th k="startDate"      label="Drug Start"    w="80px" />
+                  <Th k="stopDate"       label="Drug Stop"     w="80px" />
+                  <Th k="eventVerbatim"  label="Event Verbatim" w="130px" />
+                  <Th k="pt"             label="MedDRA PT"     w="120px" />
+                  <Th k="ptCode"         label="PT Code"       w="70px" />
+                  <Th k="soc"            label="SOC"           w="110px" />
+                  <Th k="onsetDate"      label="Onset Date"    w="80px" />
+                  <Th k="serious"        label="Seriousness"   w="130px" />
+                  <Th k="causality"      label="Causality"     w="90px" />
+                  <Th k="listedness"     label="Listedness"    w="90px" />
+                  <Th k="outcome"        label="Outcome"       w="110px" />
+                  <Th k="reporter"       label="Reporter Qual" w="90px" />
+                  <Th k="status"         label="WF Status"     w="100px" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={r.caseNumber}
+                    className={`border-b border-gray-100 hover:bg-indigo-50 transition cursor-pointer ${i%2===0?"bg-white":"bg-gray-50"}`}
+                    onClick={() => {
+                      const c = cases.find(x => x.caseNumber === r.caseNumber);
+                      if (c) { setSelected(c); setForm(c); fetchAudit(c.id); setShowLineListing(false); setShowAudit(false); setTab("general"); }
+                    }}>
+                    <td className="px-2 py-2 font-mono font-semibold text-indigo-700">{r.caseNumber}</td>
+                    <td className="px-2 py-2">{r.receiptDate}</td>
+                    <td className="px-2 py-2">{r.country}</td>
+                    <td className="px-2 py-2">{r.reportType}</td>
+                    <td className="px-2 py-2 font-mono">{r.patientInitials}</td>
+                    <td className="px-2 py-2">{r.age}</td>
+                    <td className="px-2 py-2">{r.sex}</td>
+                    <td className="px-2 py-2 font-semibold">{r.drug}</td>
+                    <td className="px-2 py-2 text-gray-500">{r.genericName}</td>
+                    <td className="px-2 py-2">{r.dose}</td>
+                    <td className="px-2 py-2">{r.route}</td>
+                    <td className="px-2 py-2">{r.indication}</td>
+                    <td className="px-2 py-2">{r.startDate}</td>
+                    <td className="px-2 py-2">{r.stopDate}</td>
+                    <td className="px-2 py-2 italic text-gray-700">{r.eventVerbatim}</td>
+                    <td className="px-2 py-2 font-semibold text-purple-800">{r.pt}</td>
+                    <td className="px-2 py-2 text-gray-400 font-mono">{r.ptCode}</td>
+                    <td className="px-2 py-2 text-gray-500">{r.soc}</td>
+                    <td className="px-2 py-2">{r.onsetDate}</td>
+                    <td className="px-2 py-2">
+                      <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${r.serious==="Non-serious"?"bg-gray-100 text-gray-600":"bg-red-100 text-red-700"}`}>
+                        {r.serious}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2">{r.causality}</td>
+                    <td className="px-2 py-2">{r.listedness}</td>
+                    <td className="px-2 py-2">{r.outcome}</td>
+                    <td className="px-2 py-2">{r.reporter}</td>
+                    <td className="px-2 py-2">
+                      <span className="bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded text-xs font-medium">{r.status}</span>
+                    </td>
+                  </tr>
+                ))}
+                {rows.length === 0 && (
+                  <tr><td colSpan={25} className="text-center py-12 text-gray-400">No cases match the current filters.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderModalForm = () => {
     if (!selected) return null;
+    if (selected.currentStep > 6) return ReadOnlySummary();
     if (!isMyCase(selected)) return ReadOnlySummary();
     if (selected.currentStep === 2) return DataEntryForm();
     if (selected.currentStep === 3) return MedicalForm();
     if (selected.currentStep === 4) return QualityForm();
     if (selected.currentStep === 5) return SubmissionsForm();
     if (selected.currentStep === 6) return ArchivalForm();
-    if (selected.currentStep > 6) return (
-      <div className="bg-green-50 border border-green-200 rounded-xl p-6 text-center text-green-700 font-semibold">
-        ✅ This case has been archived.
-      </div>
-    );
   };
 
   /* ==================================================
@@ -1923,6 +2210,10 @@ export default function App() {
           <span className="font-bold text-white">SkyVigilance SafetyDB Workflow</span>
         </div>
         <div className="flex items-center gap-4">
+          <button onClick={() => setShowLineListing(true)}
+            className="bg-indigo-700 hover:bg-indigo-600 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition">
+            📊 Line Listing
+          </button>
           <span className={`inline-block px-3 py-1 rounded-full text-xs font-semibold
             ${user.step===1?"bg-blue-200 text-blue-900":user.step===2?"bg-teal-200 text-teal-900":user.step===3?"bg-purple-200 text-purple-900":user.step===4?"bg-orange-200 text-orange-900":user.step===5?"bg-violet-200 text-violet-900":"bg-gray-200 text-gray-800"}`}>
             {user.role}
@@ -1997,13 +2288,41 @@ export default function App() {
           })}
         </div>
 
-        {/* Closed/archived cases count */}
-        {cases.filter(c => c.currentStep >= 7).length > 0 && (
-          <div className="mt-3 text-xs text-gray-400 text-right">
-            🗄️ {cases.filter(c => c.currentStep >= 7).length} case{cases.filter(c => c.currentStep >= 7).length > 1 ? "s" : ""} fully archived &amp; closed
-          </div>
-        )}
+        {/* Closed / Archived Cases */}
+        {(() => {
+          const closedCases = cases.filter(c => c.currentStep >= 7);
+          if (closedCases.length === 0) return null;
+          return (
+            <details className="mt-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+              <summary className="px-5 py-3 text-sm font-semibold text-gray-600 cursor-pointer flex items-center gap-2 hover:bg-gray-50 rounded-xl transition select-none">
+                <span>🗄️</span>
+                <span>Closed &amp; Archived Cases</span>
+                <span className="ml-1 bg-gray-200 text-gray-700 text-xs px-2 py-0.5 rounded-full font-medium">{closedCases.length}</span>
+                <span className="ml-auto text-xs text-gray-400">Click to expand</span>
+              </summary>
+              <div className="px-5 pb-4 pt-2 border-t border-gray-100">
+                <div className="grid grid-cols-3 gap-3 mt-2 md:grid-cols-4 xl:grid-cols-6">
+                  {closedCases.map(c => (
+                    <div key={c.id}
+                      onClick={() => { setSelected(c); setForm(c); setShowAudit(false); setTab("general"); setMeddraQuery(""); setMeddraResults([]); fetchAudit(c.id); }}
+                      className="p-3 rounded-lg border border-gray-200 bg-gray-50 hover:bg-indigo-50 hover:border-indigo-300 cursor-pointer text-xs transition">
+                      <div className="font-mono font-semibold text-gray-700">{c.caseNumber}</div>
+                      <div className="text-gray-400 mt-1 truncate">{c.triage?.country || "—"}</div>
+                      <div className="text-gray-500 truncate">{(c.products||[])[0]?.name || "—"}</div>
+                      <div className="mt-1 text-gray-400 font-mono text-xs">{c.triage?.receiptDate || "—"}</div>
+                      <div className="mt-1">
+                        <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded text-xs">Closed</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </details>
+          );
+        })()}
       </div>
+
+      {showLineListing && <LineListing />}
 
       <footer className="bg-blue-900 border-t border-blue-800 py-3 text-center">
         <p className="text-xs text-blue-300">A VigiServe Foundation Initiative</p>
@@ -2047,10 +2366,16 @@ export default function App() {
                     ${showAudit?"bg-amber-500 hover:bg-amber-600 text-white":"bg-amber-100 hover:bg-amber-200 text-amber-800"}`}>
                   📋 Audit Trail {auditLog.length > 0 ? `(${auditLog.length})` : ""}
                 </button>
+              {isMyCase(selected) && selected.currentStep === 5 && !showAudit && (
+                  <button onClick={returnCaseToQuality}
+                    className="bg-orange-100 hover:bg-orange-200 text-orange-800 text-xs px-3 py-1.5 rounded-lg font-semibold transition border border-orange-300">
+                    ↩️ Return to Quality
+                  </button>
+                )}
                 {isMyCase(selected) && selected.currentStep < 7 && !showAudit && (
                   <button onClick={updateCase}
                     className="bg-green-600 hover:bg-green-700 text-white text-xs px-4 py-1.5 rounded-lg font-semibold transition">
-                    {selected.currentStep === 4 ? "✅ Approve →" :
+                    {selected.currentStep === 4 ? "📋 Forward to Submissions →" :
                      selected.currentStep === 5 ? "📬 Complete Submissions →" :
                      selected.currentStep === 6 ? "🗄️ Archive & Close →" :
                      "Submit →"}
