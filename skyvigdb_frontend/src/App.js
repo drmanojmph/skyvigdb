@@ -378,9 +378,18 @@ export default function App() {
     }
   };
 
-  if (!user) return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col items-center justify-center px-4 font-sans text-slate-800">
-      <div className="bg-white/95 backdrop-blur-xl p-8 rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] border border-white/20 w-full max-w-sm">
+ if (!user) return (
+    <div className="relative min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col items-center justify-center px-4 font-sans text-slate-800 overflow-hidden">
+      {/* VigiServe Repeating Watermark */}
+      <div className="absolute inset-0 pointer-events-none"
+           style={{
+             backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 250 250' width='250' height='250'%3E%3Cg transform='rotate(-30, 125, 125)'%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='system-ui, sans-serif' font-size='28' font-weight='800' fill='rgba(255,255,255,0.03)' letter-spacing='2'%3EVigiServe%3C/text%3E%3C/g%3E%3C/svg%3E")`,
+             backgroundSize: '250px 250px'
+           }}>
+      </div>
+
+      {/* Login Box */}
+      <div className="relative z-10 bg-white/95 backdrop-blur-xl p-8 rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] border border-white/20 w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="text-5xl mb-3 drop-shadow-md">🛡️</div>
           <h2 className="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-900 to-blue-800 tracking-tight">SkyVigilance</h2>
@@ -397,7 +406,7 @@ export default function App() {
         </button>
         <p className="text-xs text-slate-400 font-medium text-center mt-6">Format: basename_role (e.g. anand_medical)</p>
       </div>
-      <p className="mt-8 text-xs font-bold text-slate-400/60 uppercase tracking-widest">A VigiServe Foundation Initiative</p>
+      <p className="relative z-10 mt-8 text-xs font-bold text-slate-400/60 uppercase tracking-widest">A VigiServe Foundation Initiative</p>
     </div>
   );
 
