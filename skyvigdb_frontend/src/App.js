@@ -12,14 +12,20 @@ const IME_TERMS = [
   "Ventricular fibrillation","Sudden death","QT prolongation"
 ];
 
-const USERS = [
-  { username:"triage1",      password:"train123", role:"Triage",       step:1 },
-  { username:"dataentry1",   password:"train123", role:"Data Entry",   step:2 },
-  { username:"medical1",     password:"train123", role:"Medical",      step:3 },
-  { username:"quality1",     password:"train123", role:"Quality",      step:4 },
-  { username:"submissions1", password:"train123", role:"Submissions",  step:5 },
-  { username:"archival1",    password:"train123", role:"Archival",     step:6 }
+const BASE_ACCOUNTS = [
+  { basename: "anand", password: "password123" },
+  { basename: "student1", password: "train123" },
+  { basename: "demo", password: "demo123" }
 ];
+
+const ROLE_MAPPING = {
+  "triage":      { role: "Triage",      step: 1 },
+  "dataentry":   { role: "Data Entry",  step: 2 },
+  "medical":     { role: "Medical",     step: 3 },
+  "quality":     { role: "Quality",     step: 4 },
+  "submissions": { role: "Submissions", step: 5 },
+  "archival":    { role: "Archival",    step: 6 }
+};
 
 const STAGES = [
   { name:"Triage",      step:1 }, { name:"Data Entry",  step:2 },
@@ -343,9 +349,32 @@ export default function App() {
   };
 
   const doLogin = () => {
-    const found = USERS.find(u => u.username === login.username && u.password === login.password);
-    if (found) { resetSession(); setUser(found); setLogin({ username:"", password:"" }); }
-    else alert("Invalid credentials");
+    const inputUser = login.username.toLowerCase().trim();
+    const inputPass = login.password;
+    let foundUser = null;
+
+    if (inputUser.includes("_")) {
+      const [basename, suffix] = inputUser.split("_");
+      const isValidAccount = BASE_ACCOUNTS.find(b => b.basename === basename && b.password === inputPass);
+      const isValidRole = ROLE_MAPPING[suffix];
+
+      if (isValidAccount && isValidRole) {
+        foundUser = {
+          username: inputUser,
+          password: inputPass,
+          role: isValidRole.role,
+          step: isValidRole.step
+        };
+      }
+    }
+
+    if (foundUser) {
+      resetSession();
+      setUser(foundUser);
+      setLogin({ username:"", password:"" });
+    } else {
+      alert("Invalid credentials. Ensure format is basename_role (e.g., anand_triage).");
+    }
   };
 
   if (!user) return (
@@ -356,7 +385,7 @@ export default function App() {
           <h2 className="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-900 to-blue-800 tracking-tight">SkyVigilance</h2>
           <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">SafetyDB Platform</p>
         </div>
-        <input placeholder="Username" className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 w-full mb-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all font-medium"
+        <input placeholder="Username (e.g. anand_triage)" className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 w-full mb-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all font-medium"
           value={login.username} onChange={e => setLogin({...login, username:e.target.value})}
           onKeyDown={e => e.key === "Enter" && doLogin()} />
         <input type="password" placeholder="Password" className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 w-full mb-6 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all font-medium"
@@ -365,7 +394,7 @@ export default function App() {
         <button onClick={doLogin} className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white w-full py-3 rounded-xl font-bold shadow-md shadow-indigo-200 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 text-sm">
           Sign In
         </button>
-        <p className="text-xs text-slate-400 font-medium text-center mt-6">Contact your training coordinator for access.</p>
+        <p className="text-xs text-slate-400 font-medium text-center mt-6">Format: basename_role (e.g. anand_medical)</p>
       </div>
       <p className="mt-8 text-xs font-bold text-slate-400/60 uppercase tracking-widest">A VigiServe Foundation Initiative</p>
     </div>
@@ -1153,7 +1182,7 @@ export default function App() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               {F("Ethnicity / Race", I({ value:form.patient?.ethnicity||"", onChange:e => setNested("patient","ethnicity",e.target.value) }))}
-              {F("Pregnancy Status", S(["Not pregnant","Pregnant","Postpartum","Unknown","N/A"],
+              {form.patient?.sex !== "Male" && F("Pregnancy Status", S(["Not pregnant","Pregnant","Postpartum","Unknown","N/A"],
                   { value:form.patient?.pregnancy||"", onChange:e => setNested("patient","pregnancy",e.target.value) }))}
             </div>
 
@@ -1259,12 +1288,16 @@ export default function App() {
           const products = (form.products?.length) ? form.products : [{}];
           return (
             <div>
-              {products.map((p2,i) => (
+              {products.map((p2,i) => {
+                const hideChallenge = ["Concomitant", "Past therapy"].includes(p2.role);
+                return (
                 <div key={i} className="border border-slate-200 rounded-2xl p-5 mb-5 bg-slate-50 shadow-sm">
                   <div className="text-xs font-extrabold text-slate-400 uppercase mb-3 tracking-widest">Product {i+1}</div>
 
                   <SectionHead>Identification</SectionHead>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    {F("Product Role *", S(["Suspect", "Co-suspect", "Interacting", "Concomitant", "Past therapy"],
+                        { value:p2.role||"Suspect", onChange:e => setP(i,"role",e.target.value) }), true)}
                     {F("Brand Name",     I({ placeholder:"Brand / trade name", value:p2.name||"",        onChange:e => setP(i,"name",e.target.value)        }), true)}
                     {F("Generic Name",   I({ placeholder:"INN / generic",      value:p2.genericName||"", onChange:e => setP(i,"genericName",e.target.value)  }))}
                   </div>
@@ -1310,9 +1343,9 @@ export default function App() {
                     {F("Duration",   I({ placeholder:"e.g. 3 months", value:p2.duration||"",
                         onChange:e => setP(i,"duration",e.target.value) }))}
                   </div>
-                  {F("Dechallenge Result", S(["Positive – Event abated on withdrawal","Negative – Event did not abate","Not done","Unknown","N/A"],
+                  {!hideChallenge && F("Dechallenge Result", S(["Positive – Event abated on withdrawal","Negative – Event did not abate","Not done","Unknown","N/A"],
                       { value:p2.dechallenge||"", onChange:e => setP(i,"dechallenge",e.target.value) }))}
-                  {F("Rechallenge Result", S(["Positive – Event recurred","Negative – Event did not recur","Not done","Unknown","N/A"],
+                  {!hideChallenge && F("Rechallenge Result", S(["Positive – Event recurred","Negative – Event did not recur","Not done","Unknown","N/A"],
                       { value:p2.rechallenge||"", onChange:e => setP(i,"rechallenge",e.target.value) }))}
                   <div className="flex gap-6 mt-3 flex-wrap">
                     {C("Ongoing",           p2.ongoing,       e => setP(i,"ongoing",e.target.checked))}
@@ -1333,7 +1366,8 @@ export default function App() {
                   {F("QC Result Notes", TA({ placeholder:"Enter QC analysis result notes…", rows:2,
                       value:p2.qcNotes||"", onChange:e => setP(i,"qcNotes",e.target.value) }))}
                 </div>
-              ))}
+                );
+              })}
               <button onClick={() => setForm(f=>({...f,products:[...(f.products||[{}]),{}]}))}
                 className="text-indigo-600 text-sm font-bold hover:text-indigo-800 transition-colors">+ Add Product</button>
               <div className="mt-8 pt-6 border-t border-slate-200 flex justify-end">
