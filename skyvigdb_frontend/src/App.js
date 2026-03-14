@@ -181,9 +181,30 @@ export default function App() {
 
   const flash = (text, type="ok") => { setMsg({ text, type }); setTimeout(() => setMsg(null), 4000); };
 
+  const resetSession = () => {
+    setForm({});
+    setSelected(null);
+    setCases([]);
+    setAuditLog([]);
+    setShowAudit(false);
+    setDupResults(null);
+    setDupLoading(false);
+    setMeddraQuery("");
+    setMeddraResults([]);
+    setMeddraTarget(null);
+    setTab("general");
+    setMsg(null);
+    setShowLineListing(false);
+    setLlFilter("");
+    setLlSortKey("receiptDate");
+    setLlSortDir("desc");
+    setLlStepFilter("all");
+    setLlSeriousFilter("all");
+  };
+
   const doLogin = () => {
     const found = USERS.find(u => u.username === login.username && u.password === login.password);
-    if (found) { setUser(found); setLogin({ username:"", password:"" }); }
+    if (found) { resetSession(); setUser(found); setLogin({ username:"", password:"" }); }
     else alert("Invalid credentials");
   };
 
@@ -2235,7 +2256,7 @@ export default function App() {
             {user.role}
           </span>
           <span className="text-xs text-blue-200">{user.username}</span>
-          <button onClick={() => setUser(null)} className="text-xs text-blue-300 hover:text-red-300 transition">Logout</button>
+          <button onClick={() => { resetSession(); setUser(null); }} className="text-xs text-blue-300 hover:text-red-300 transition">Logout</button>
         </div>
       </div>
 
