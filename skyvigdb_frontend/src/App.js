@@ -413,12 +413,15 @@ export default function App() {
 
   if (!user) return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col items-center justify-center px-4 font-sans text-slate-800 overflow-hidden">
+      {/* VigiServe Repeating Watermark */}
       <div className="absolute inset-0 pointer-events-none"
            style={{
              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 250 250' width='250' height='250'%3E%3Cg transform='rotate(-30, 125, 125)'%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='system-ui, sans-serif' font-size='28' font-weight='800' fill='rgba(255,255,255,0.03)' letter-spacing='2'%3EVigiServe%3C/text%3E%3C/g%3E%3C/svg%3E")`,
              backgroundSize: '250px 250px'
            }}>
       </div>
+
+      {/* Login Box */}
       <div className="relative z-10 bg-white/95 backdrop-blur-xl p-8 rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] border border-white/20 w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="text-5xl mb-3 drop-shadow-md">🛡️</div>
@@ -435,6 +438,26 @@ export default function App() {
           Sign In
         </button>
         <p className="text-xs text-slate-400 font-medium text-center mt-6">Format: basename_role (e.g. anand_medical)</p>
+
+        <div className="mt-6 pt-6 border-t border-slate-200 space-y-4">
+          <a href="https://drive.google.com/file/d/1Nvr5Yxq58vy9atXv-rGtJaqNNMJCtgTB/view?usp=drive_link"
+             target="_blank"
+             rel="noopener noreferrer"
+             className="flex items-center justify-center gap-2 w-full py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-bold rounded-xl transition-colors">
+            📄 View SafetyDB Manual V1
+          </a>
+          <div className="w-full aspect-video rounded-xl overflow-hidden shadow-inner border border-slate-200">
+            <iframe
+              width="100%"
+              height="100%"
+              src="https://www.youtube.com/embed/B4pq2AJKXPU"
+              title="SafetyDB Demo Video"
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            ></iframe>
+          </div>
+        </div>
       </div>
       <p className="relative z-10 mt-8 text-xs font-bold text-slate-400/60 uppercase tracking-widest">A VigiServe Foundation Initiative</p>
     </div>
@@ -602,28 +625,24 @@ export default function App() {
   };
 
   const runWHOUMC = () => {
-    setForm(f => {
-      const m = f.medical || {};
-      let result = "Unassessable";
-      if (m.rechallenge) result = "Certain";
-      else if (m.temporal && m.dechallenge && !m.alternative) result = "Probable";
-      else if (m.temporal && !m.alternative) result = "Possible";
-      else if (m.temporal) result = "Unlikely";
-      return { ...f, medical: { ...m, causality:result } };
-    });
+    const m = form.medical || {};
+    let result = "Unassessable";
+    if (m.rechallenge) result = "Certain";
+    else if (m.temporal && m.dechallenge && !m.alternative) result = "Probable";
+    else if (m.temporal && !m.alternative) result = "Possible";
+    else if (m.temporal) result = "Unlikely";
+    setForm(f => ({ ...f, medical: { ...m, causality:result } }));
   };
 
   const runNaranjo = () => {
-    setForm(f => {
-      const m = f.medical || {};
-      let score = 0;
-      if (m.nar_previous) score += 1; if (m.nar_reaction) score += 2; if (m.nar_dechallenge) score += 1;
-      if (m.nar_rechallenge) score += 2; if (m.nar_alternative) score -= 1; if (m.nar_placebo) score += 1;
-      if (m.nar_drug_level) score += 1; if (m.nar_dose_related) score += 1; if (m.nar_prior_exp) score += 1;
-      if (m.nar_confirmed) score += 1;
-      const cat = score >= 9 ? "Definite" : score >= 5 ? "Probable" : score >= 1 ? "Possible" : "Doubtful";
-      return { ...f, medical: { ...m, naranjScore:score, naranjResult:cat } };
-    });
+    const m = form.medical || {};
+    let score = 0;
+    if (m.nar_previous) score += 1; if (m.nar_reaction) score += 2; if (m.nar_dechallenge) score += 1;
+    if (m.nar_rechallenge) score += 2; if (m.nar_alternative) score -= 1; if (m.nar_placebo) score += 1;
+    if (m.nar_drug_level) score += 1; if (m.nar_dose_related) score += 1; if (m.nar_prior_exp) score += 1;
+    if (m.nar_confirmed) score += 1;
+    const cat = score >= 9 ? "Definite" : score >= 5 ? "Probable" : score >= 1 ? "Possible" : "Doubtful";
+    setForm(f => ({ ...f, medical: { ...m, naranjScore:score, naranjResult:cat } }));
   };
 
   const buildMedHistoryText = (p) => {
@@ -773,14 +792,17 @@ export default function App() {
 
     if (m.causality||m.listedness||ev.pt) {
       ensureSpace(28);
-      hdr("MEDICAL ASSESSMENT (SkyVigilance supplementary)", M, y, CW, 5, "light"); y += 6;
-      box(M,y,60,10); lbl("MedDRA PT",M+1,y+3.5); fld(ev.pt||"Not coded",M+1,y+8,58);
-      box(M+60,y,40,10); lbl("PT Code",M+61,y+3.5); fld(ev.pt_code||"—",M+61,y+8,38);
-      box(M+100,y,40,10); lbl("SOC",M+101,y+3.5); fld(ev.soc||"—",M+101,y+8,38);
-      box(M+140,y,50,10); lbl("MedDRA Version",M+141,y+3.5); fld("28.1",M+141,y+8,48); y += 11;
-      box(M,y,60,10); lbl("WHO-UMC Causality",M+1,y+3.5); fld(m.causality||"Not assessed",M+1,y+8,58);
-      box(M+60,y,60,10); lbl("Listedness",M+61,y+3.5); fld(m.listedness||"Not assessed",M+61,y+8,58);
-      box(M+120,y,70,10); lbl("Seriousness",M+121,y+3.5); fld(autoSerious()?"SERIOUS":"Non-serious",M+121,y+8,68); y += 11;
+      doc.setFillColor(240,240,255); doc.rect(M,y,CW,5,"F");
+      doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(40,40,120);
+      doc.text("MEDICAL ASSESSMENT — SkyVigilance supplementary (not part of standard FDA 3500)",M+2,y+3.5);
+      doc.setTextColor(0,0,0); y+=6;
+      box(M,y,65,10); lbl("MedDRA PT",M+1,y+3.5); fld(ev.pt||"Not coded",M+1,y+8,63);
+      box(M+65,y,35,10); lbl("PT Code",M+66,y+3.5); fld(ev.pt_code||"—",M+66,y+8,33);
+      box(M+100,y,50,10); lbl("SOC",M+101,y+3.5); fld(ev.soc||"—",M+101,y+8,48);
+      box(M+150,y,40,10); lbl("MedDRA Version",M+151,y+3.5); fld("28.1",M+151,y+8,38); y+=11;
+      box(M,y,65,10); lbl("WHO-UMC Causality",M+1,y+3.5); fld(m.causality||"Not assessed",M+1,y+8,63);
+      box(M+65,y,65,10); lbl("Listedness",M+66,y+3.5); fld(m.listedness||"Not assessed",M+66,y+8,63);
+      box(M+130,y,60,10); lbl("Seriousness",M+131,y+3.5); fld(autoSerious()?"SERIOUS":"Non-serious",M+131,y+8,58); y+=12;
     }
 
     const narrativeText = form.narrative || "";
@@ -1342,7 +1364,7 @@ export default function App() {
                   <div className="grid grid-cols-3 gap-4">
                     {F("Product Role *", S(["Suspect", "Co-suspect", "Interacting", "Concomitant", "Past therapy"],
                         { value:p2.role||"Suspect", onChange:e => setP(i,"role",e.target.value) }), true)}
-                    {F("Brand Name",     I({ placeholder:"Brand / trade name", value:p2.name||"",         onChange:e => setP(i,"name",e.target.value)        }), true)}
+                    {F("Brand Name",     I({ placeholder:"Brand / trade name", value:p2.name||"",        onChange:e => setP(i,"name",e.target.value)        }), true)}
                     {F("Generic Name",   I({ placeholder:"INN / generic",      value:p2.genericName||"", onChange:e => setP(i,"genericName",e.target.value)  }))}
                   </div>
                   <div className="grid grid-cols-3 gap-4">
@@ -1365,14 +1387,14 @@ export default function App() {
 
                   <SectionHead>Dosing</SectionHead>
                   <div className="grid grid-cols-3 gap-4">
-                    {F("Dose",             I({ placeholder:"Amount", value:p2.dose||"",      onChange:e => setP(i,"dose",e.target.value)      }))}
-                    {F("Dose Unit",        S(["mg","mcg","g","IU","mL","mg/kg","mg/m²","Other"],
+                    {F("Dose",           I({ placeholder:"Amount", value:p2.dose||"",      onChange:e => setP(i,"dose",e.target.value)      }))}
+                    {F("Dose Unit",      S(["mg","mcg","g","IU","mL","mg/kg","mg/m²","Other"],
                         { value:p2.doseUnit||"", onChange:e => setP(i,"doseUnit",e.target.value) }))}
-                    {F("Frequency",        S(["Once daily","Twice daily","Three times daily","Four times daily","Weekly","Biweekly","Monthly","As needed","Other"],
+                    {F("Frequency",      S(["Once daily","Twice daily","Three times daily","Four times daily","Weekly","Biweekly","Monthly","As needed","Other"],
                         { value:p2.frequency||"", onChange:e => setP(i,"frequency",e.target.value) }))}
-                    {F("Route",            S(["Oral","Intravenous","Intramuscular","Subcutaneous","Topical","Inhalation","Transdermal","Rectal","Ophthalmic","Other"],
+                    {F("Route",          S(["Oral","Intravenous","Intramuscular","Subcutaneous","Topical","Inhalation","Transdermal","Rectal","Ophthalmic","Other"],
                         { value:p2.route||"", onChange:e => setP(i,"route",e.target.value) }))}
-                    {F("Formulation",      S(["Tablet","Capsule","Solution","Suspension","Injection","Patch","Cream/Ointment","Inhaler","Other"],
+                    {F("Formulation",    S(["Tablet","Capsule","Solution","Suspension","Injection","Patch","Cream/Ointment","Inhaler","Other"],
                         { value:p2.formulation||"", onChange:e => setP(i,"formulation",e.target.value) }))}
                     {F("Cumulative Dose",I({ placeholder:"Total dose if known", value:p2.cumulativeDose||"",
                         onChange:e => setP(i,"cumulativeDose",e.target.value) }))}
@@ -1512,7 +1534,7 @@ export default function App() {
                     <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4 shadow-sm">
                       <div className="text-xs font-bold text-slate-500 uppercase mb-3">Hospitalisation Details</div>
                       <div className="grid grid-cols-3 gap-4">
-                        {F("Hospital Name",    I({ value:e.hospitalName||"",  onChange:ev=>setEv(i,"hospitalName",ev.target.value)   }))}
+                        {F("Hospital Name",    I({ value:e.hospitalName||"",   onChange:ev=>setEv(i,"hospitalName",ev.target.value)   }))}
                         {F("Admission Date",   <input type="date" className="bg-white/50 border border-slate-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all"
                             value={e.admissionDate||""} onChange={ev=>setEv(i,"admissionDate",ev.target.value)} />)}
                         {F("Discharge Date",   <input type="date" className="bg-white/50 border border-slate-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all"
