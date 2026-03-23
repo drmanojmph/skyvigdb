@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 import jsPDF from "jspdf";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
@@ -14,7 +14,7 @@ const IME_TERMS = [
 
 const BASE_ACCOUNTS = [
   { basename: "anand", password: "password123" },
-   { basename: "manoj", password: "m123anoj" },
+  { basename: "manoj", password: "m123anoj" },
   { basename: "student1", password: "train123" },
   { basename: "demo", password: "demo123" }
 ];
@@ -57,6 +57,23 @@ const COUNTRIES = [
   "United Arab Emirates", "United Kingdom", "United States", "Vietnam"
 ];
 
+/* ================= TAILWIND CLASS MAP ================= */
+const getColorClasses = (color) => {
+  const maps = {
+    indigo: { text: "text-indigo-700", border: "border-indigo-100", accent: "accent-indigo-600" },
+    blue: { text: "text-blue-700", border: "border-blue-100", accent: "accent-blue-600" },
+    purple: { text: "text-purple-700", border: "border-purple-100", accent: "accent-purple-600" },
+    yellow: { text: "text-yellow-700", border: "border-yellow-100", accent: "accent-yellow-600" },
+    orange: { text: "text-orange-700", border: "border-orange-100", accent: "accent-orange-600" },
+    red: { text: "text-red-700", border: "border-red-100", accent: "accent-red-600" },
+    green: { text: "text-green-700", border: "border-green-100", accent: "accent-green-600" },
+    amber: { text: "text-amber-700", border: "border-amber-100", accent: "accent-amber-600" },
+    slate: { text: "text-slate-700", border: "border-slate-100", accent: "accent-slate-600" },
+    violet: { text: "text-violet-700", border: "border-violet-100", accent: "accent-violet-600" }
+  };
+  return maps[color] || maps.indigo;
+};
+
 const F = (label, el, required=false, hint="") => (
   <div className="flex flex-col gap-1 mb-3">
     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
@@ -76,18 +93,26 @@ const S = (opts, props) => (
   </select>
 );
 
-const C = (label, checked, onChange, color="indigo") => (
-  <label className="flex items-start gap-2 text-sm cursor-pointer py-1">
-    <input type="checkbox" checked={!!checked} onChange={onChange} className={`mt-0.5 w-4 h-4 accent-${color}-600 flex-shrink-0 cursor-pointer`} />
-    <span className="text-slate-700 font-medium">{label}</span>
-  </label>
-);
+const C = (label, checked, onChange, color="indigo") => {
+  const cls = getColorClasses(color);
+  return (
+    <label className="flex items-start gap-2 text-sm cursor-pointer py-1">
+      <input type="checkbox" checked={!!checked} onChange={onChange} className={`mt-0.5 w-4 h-4 ${cls.accent} flex-shrink-0 cursor-pointer`} />
+      <span className="text-slate-700 font-medium">{label}</span>
+    </label>
+  );
+};
 
 const TA = (props) => <textarea className="bg-white/50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white w-full resize-none transition-all" rows={3} {...props} />;
 
-const SectionHead = ({children, color="indigo"}) => (
-  <div className={`text-xs font-extrabold text-${color}-700 uppercase tracking-widest border-b border-${color}-100 pb-1 mb-4 mt-6`}>{children}</div>
-);
+const SectionHead = ({children, color="indigo"}) => {
+  const cls = getColorClasses(color);
+  return (
+    <div className={`text-xs font-extrabold ${cls.text} uppercase tracking-widest border-b ${cls.border} pb-1 mb-4 mt-6`}>
+      {children}
+    </div>
+  );
+};
 
 const MedDRAWidget = ({ targetSection, targetIdx, currentPt, currentPtCode, currentLlt, currentSoc,
                         meddraQuery, meddraResults, meddraLoading, meddraTarget, setMeddraTarget,
@@ -146,9 +171,9 @@ const MedDRAWidget = ({ targetSection, targetIdx, currentPt, currentPtCode, curr
 };
 
 function SearchPanel({ cases, onOpenCase }) {
-  const [qCase,    setQCase]    = React.useState("");
-  const [qProduct, setQProduct] = React.useState("");
-  const [qCountry, setQCountry] = React.useState("");
+  const [qCase,    setQCase]    = useState("");
+  const [qProduct, setQProduct] = useState("");
+  const [qCountry, setQCountry] = useState("");
 
   const hasQuery = qCase.trim() || qProduct.trim() || qCountry.trim();
 
@@ -298,12 +323,22 @@ export default function App() {
   const [llStepFilter,    setLlStepFilter]    = useState("all");
   const [llSeriousFilter, setLlSeriousFilter] = useState("all");
 
-  useEffect(() => { if (user) { fetchCases(); axios.get(API + "/health").catch(() => {}); } }, [user]);
+  const flash = useCallback((text, type="ok") => {
+    setMsg({ text, type });
+    setTimeout(() => setMsg(null), 4000);
+  }, []);
 
-  const fetchCases = async () => {
+  const fetchCases = useCallback(async () => {
     try { const res = await axios.get(API + "/cases"); setCases(res.data || []); }
     catch { flash("Could not load cases — check backend connection.", "error"); }
-  };
+  }, [flash]);
+
+  useEffect(() => { 
+    if (user) { 
+      fetchCases(); 
+      axios.get(API + "/health").catch(() => {}); 
+    } 
+  }, [user, fetchCases]);
 
   const fetchAudit = async (caseId) => {
     try { const res = await axios.get(API + "/cases/" + caseId + "/audit"); setAuditLog(res.data || []); }
@@ -324,8 +359,6 @@ export default function App() {
       flash("📨 E2B(R3) XML downloaded — " + selected.caseNumber);
     } catch { flash("❌ E2B export failed — check backend connection.", "error"); }
   };
-
-  const flash = (text, type="ok") => { setMsg({ text, type }); setTimeout(() => setMsg(null), 4000); };
 
   const resetSession = () => {
     setForm({});
@@ -378,17 +411,14 @@ export default function App() {
     }
   };
 
- if (!user) return (
+  if (!user) return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col items-center justify-center px-4 font-sans text-slate-800 overflow-hidden">
-      {/* VigiServe Repeating Watermark */}
       <div className="absolute inset-0 pointer-events-none"
            style={{
              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 250 250' width='250' height='250'%3E%3Cg transform='rotate(-30, 125, 125)'%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='system-ui, sans-serif' font-size='28' font-weight='800' fill='rgba(255,255,255,0.03)' letter-spacing='2'%3EVigiServe%3C/text%3E%3C/g%3E%3C/svg%3E")`,
              backgroundSize: '250px 250px'
            }}>
       </div>
-
-      {/* Login Box */}
       <div className="relative z-10 bg-white/95 backdrop-blur-xl p-8 rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] border border-white/20 w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="text-5xl mb-3 drop-shadow-md">🛡️</div>
@@ -572,24 +602,28 @@ export default function App() {
   };
 
   const runWHOUMC = () => {
-    const m = form.medical || {};
-    let result = "Unassessable";
-    if (m.rechallenge) result = "Certain";
-    else if (m.temporal && m.dechallenge && !m.alternative) result = "Probable";
-    else if (m.temporal && !m.alternative) result = "Possible";
-    else if (m.temporal) result = "Unlikely";
-    setForm(f => ({ ...f, medical: { ...m, causality:result } }));
+    setForm(f => {
+      const m = f.medical || {};
+      let result = "Unassessable";
+      if (m.rechallenge) result = "Certain";
+      else if (m.temporal && m.dechallenge && !m.alternative) result = "Probable";
+      else if (m.temporal && !m.alternative) result = "Possible";
+      else if (m.temporal) result = "Unlikely";
+      return { ...f, medical: { ...m, causality:result } };
+    });
   };
 
   const runNaranjo = () => {
-    const m = form.medical || {};
-    let score = 0;
-    if (m.nar_previous) score += 1; if (m.nar_reaction) score += 2; if (m.nar_dechallenge) score += 1;
-    if (m.nar_rechallenge) score += 2; if (m.nar_alternative) score -= 1; if (m.nar_placebo) score += 1;
-    if (m.nar_drug_level) score += 1; if (m.nar_dose_related) score += 1; if (m.nar_prior_exp) score += 1;
-    if (m.nar_confirmed) score += 1;
-    const cat = score >= 9 ? "Definite" : score >= 5 ? "Probable" : score >= 1 ? "Possible" : "Doubtful";
-    setForm(f => ({ ...f, medical: { ...m, naranjScore:score, naranjResult:cat } }));
+    setForm(f => {
+      const m = f.medical || {};
+      let score = 0;
+      if (m.nar_previous) score += 1; if (m.nar_reaction) score += 2; if (m.nar_dechallenge) score += 1;
+      if (m.nar_rechallenge) score += 2; if (m.nar_alternative) score -= 1; if (m.nar_placebo) score += 1;
+      if (m.nar_drug_level) score += 1; if (m.nar_dose_related) score += 1; if (m.nar_prior_exp) score += 1;
+      if (m.nar_confirmed) score += 1;
+      const cat = score >= 9 ? "Definite" : score >= 5 ? "Probable" : score >= 1 ? "Possible" : "Doubtful";
+      return { ...f, medical: { ...m, naranjScore:score, naranjResult:cat } };
+    });
   };
 
   const buildMedHistoryText = (p) => {
@@ -1308,7 +1342,7 @@ export default function App() {
                   <div className="grid grid-cols-3 gap-4">
                     {F("Product Role *", S(["Suspect", "Co-suspect", "Interacting", "Concomitant", "Past therapy"],
                         { value:p2.role||"Suspect", onChange:e => setP(i,"role",e.target.value) }), true)}
-                    {F("Brand Name",     I({ placeholder:"Brand / trade name", value:p2.name||"",        onChange:e => setP(i,"name",e.target.value)        }), true)}
+                    {F("Brand Name",     I({ placeholder:"Brand / trade name", value:p2.name||"",         onChange:e => setP(i,"name",e.target.value)        }), true)}
                     {F("Generic Name",   I({ placeholder:"INN / generic",      value:p2.genericName||"", onChange:e => setP(i,"genericName",e.target.value)  }))}
                   </div>
                   <div className="grid grid-cols-3 gap-4">
@@ -1331,14 +1365,14 @@ export default function App() {
 
                   <SectionHead>Dosing</SectionHead>
                   <div className="grid grid-cols-3 gap-4">
-                    {F("Dose",           I({ placeholder:"Amount", value:p2.dose||"",      onChange:e => setP(i,"dose",e.target.value)      }))}
-                    {F("Dose Unit",      S(["mg","mcg","g","IU","mL","mg/kg","mg/m²","Other"],
+                    {F("Dose",             I({ placeholder:"Amount", value:p2.dose||"",      onChange:e => setP(i,"dose",e.target.value)      }))}
+                    {F("Dose Unit",        S(["mg","mcg","g","IU","mL","mg/kg","mg/m²","Other"],
                         { value:p2.doseUnit||"", onChange:e => setP(i,"doseUnit",e.target.value) }))}
-                    {F("Frequency",      S(["Once daily","Twice daily","Three times daily","Four times daily","Weekly","Biweekly","Monthly","As needed","Other"],
+                    {F("Frequency",        S(["Once daily","Twice daily","Three times daily","Four times daily","Weekly","Biweekly","Monthly","As needed","Other"],
                         { value:p2.frequency||"", onChange:e => setP(i,"frequency",e.target.value) }))}
-                    {F("Route",          S(["Oral","Intravenous","Intramuscular","Subcutaneous","Topical","Inhalation","Transdermal","Rectal","Ophthalmic","Other"],
+                    {F("Route",            S(["Oral","Intravenous","Intramuscular","Subcutaneous","Topical","Inhalation","Transdermal","Rectal","Ophthalmic","Other"],
                         { value:p2.route||"", onChange:e => setP(i,"route",e.target.value) }))}
-                    {F("Formulation",    S(["Tablet","Capsule","Solution","Suspension","Injection","Patch","Cream/Ointment","Inhaler","Other"],
+                    {F("Formulation",      S(["Tablet","Capsule","Solution","Suspension","Injection","Patch","Cream/Ointment","Inhaler","Other"],
                         { value:p2.formulation||"", onChange:e => setP(i,"formulation",e.target.value) }))}
                     {F("Cumulative Dose",I({ placeholder:"Total dose if known", value:p2.cumulativeDose||"",
                         onChange:e => setP(i,"cumulativeDose",e.target.value) }))}
@@ -1478,7 +1512,7 @@ export default function App() {
                     <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4 shadow-sm">
                       <div className="text-xs font-bold text-slate-500 uppercase mb-3">Hospitalisation Details</div>
                       <div className="grid grid-cols-3 gap-4">
-                        {F("Hospital Name",    I({ value:e.hospitalName||"",   onChange:ev=>setEv(i,"hospitalName",ev.target.value)   }))}
+                        {F("Hospital Name",    I({ value:e.hospitalName||"",  onChange:ev=>setEv(i,"hospitalName",ev.target.value)   }))}
                         {F("Admission Date",   <input type="date" className="bg-white/50 border border-slate-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all"
                             value={e.admissionDate||""} onChange={ev=>setEv(i,"admissionDate",ev.target.value)} />)}
                         {F("Discharge Date",   <input type="date" className="bg-white/50 border border-slate-200 rounded-lg px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all"
