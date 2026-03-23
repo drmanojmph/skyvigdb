@@ -57,7 +57,6 @@ const COUNTRIES = [
   "United Arab Emirates", "United Kingdom", "United States", "Vietnam"
 ];
 
-/* ================= TAILWIND CLASS MAP ================= */
 const getColorClasses = (color) => {
   const maps = {
     indigo: { text: "text-indigo-700", border: "border-indigo-100", accent: "accent-indigo-600" },
@@ -417,6 +416,7 @@ export default function App() {
 
   if (!user) return (
     <div className="relative min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col items-center justify-center px-4 py-12 font-sans text-slate-800 overflow-y-auto">
+      {/* VigiServe Repeating Watermark */}
       <div className="absolute inset-0 pointer-events-none"
            style={{
              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 250 250' width='250' height='250'%3E%3Cg transform='rotate(-30, 125, 125)'%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='system-ui, sans-serif' font-size='28' font-weight='800' fill='rgba(255,255,255,0.03)' letter-spacing='2'%3EVigiServe%3C/text%3E%3C/g%3E%3C/svg%3E")`,
@@ -653,25 +653,33 @@ export default function App() {
     return IME_TERMS.some(t => t.toLowerCase() === pt.toLowerCase()) || Object.values(s).some(v => v === true);
   };
 
-  const runWHOUMC = () => {
-    const m = form.medical || {};
-    let result = "Unassessable";
-    if (m.rechallenge) result = "Certain";
-    else if (m.temporal && m.dechallenge && !m.alternative) result = "Probable";
-    else if (m.temporal && !m.alternative) result = "Possible";
-    else if (m.temporal) result = "Unlikely";
-    setForm(f => ({ ...f, medical: { ...m, causality:result } }));
+  const runWHOUMC = (idx) => {
+    setForm(f => {
+      const events = [...(f.events || [{}])];
+      const e = events[idx] || {};
+      let result = "Unassessable";
+      if (e.rechallenge) result = "Certain";
+      else if (e.temporal && e.dechallenge && !e.alternative) result = "Probable";
+      else if (e.temporal && !e.alternative) result = "Possible";
+      else if (e.temporal) result = "Unlikely";
+      events[idx] = { ...e, causality: result };
+      return { ...f, events };
+    });
   };
 
-  const runNaranjo = () => {
-    const m = form.medical || {};
-    let score = 0;
-    if (m.nar_previous) score += 1; if (m.nar_reaction) score += 2; if (m.nar_dechallenge) score += 1;
-    if (m.nar_rechallenge) score += 2; if (m.nar_alternative) score -= 1; if (m.nar_placebo) score += 1;
-    if (m.nar_drug_level) score += 1; if (m.nar_dose_related) score += 1; if (m.nar_prior_exp) score += 1;
-    if (m.nar_confirmed) score += 1;
-    const cat = score >= 9 ? "Definite" : score >= 5 ? "Probable" : score >= 1 ? "Possible" : "Doubtful";
-    setForm(f => ({ ...f, medical: { ...m, naranjScore:score, naranjResult:cat } }));
+  const runNaranjo = (idx) => {
+    setForm(f => {
+      const events = [...(f.events || [{}])];
+      const e = events[idx] || {};
+      let score = 0;
+      if (e.nar_previous) score += 1; if (e.nar_reaction) score += 2; if (e.nar_dechallenge) score += 1;
+      if (e.nar_rechallenge) score += 2; if (e.nar_alternative) score -= 1; if (e.nar_placebo) score += 1;
+      if (e.nar_drug_level) score += 1; if (e.nar_dose_related) score += 1; if (e.nar_prior_exp) score += 1;
+      if (e.nar_confirmed) score += 1;
+      const cat = score >= 9 ? "Definite" : score >= 5 ? "Probable" : score >= 1 ? "Possible" : "Doubtful";
+      events[idx] = { ...e, naranjScore: score, naranjResult: cat, causality: cat };
+      return { ...f, events };
+    });
   };
 
   const buildMedHistoryText = (p) => {
@@ -719,6 +727,12 @@ export default function App() {
     const serious = autoSerious()
       ? "serious (" + Object.entries(g.seriousness || {}).filter(([,v]) => v).map(([k]) => k).join(", ") + ")" : "non-serious";
 
+    const causalityArray = events.filter(e => e.causality).map(e => `${e.pt || e.term}: ${e.causality}`);
+    const causalityStr = causalityArray.length > 0 ? `Causality was assessed as ${causalityArray.join("; ")}. ` : "";
+
+    const listednessArray = events.filter(e => e.listedness).map(e => `${e.pt || e.term}: ${e.listedness}`);
+    const listednessStr = listednessArray.length > 0 ? `Listedness was determined as ${listednessArray.join("; ")}. ` : "";
+
     const text =
       `Case ID: ${caseId}. ` +
       `A ${p.age||"[age]"}-year-old ${p.sex||"[sex]"} patient${p.weight ? " (" + p.weight + " kg)" : ""} ` +
@@ -726,8 +740,8 @@ export default function App() {
       `was receiving ${productsText}. ` + concomText +
       `On ${onsetText}, the patient developed ${eventsText}. ` +
       `The event was considered ${serious}. ` + labText +
-      (m.causality ? `Causality was assessed as ${m.causality} per WHO-UMC criteria. ` : "") +
-      (m.listedness ? `The event is ${m.listedness} per the reference safety information. ` : "") +
+      causalityStr +
+      listednessStr +
       `The case was reported by a ${t.qualification||"reporter"} from ${t.country||"[country]"}.`;
 
     setForm(f => ({ ...f, narrative: text }));
@@ -736,7 +750,7 @@ export default function App() {
   const exportCIOMS = () => {
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     const PW = 210, PH = 297, M = 10, CW = PW - M * 2;
-    const p = form.patient || {}, d = (form.products||[{}])[0], ev = (form.events||[{}])[0];
+    const p = form.patient || {}, d = (form.products||[{}])[0], ev = (form.events||[{}])[0] || {};
     const g = form.general || {}, m = form.medical || {}, t = form.triage || {};
     const val = (v) => String(v || ""), na = (v) => v ? String(v) : "—";
     const box = (x,y,w,h) => { doc.setDrawColor(100); doc.rect(x,y,w,h); };
@@ -829,7 +843,7 @@ export default function App() {
     chk((g.reportType||"Initial").toLowerCase()==="initial",M+96,y+8); doc.setFontSize(7); doc.text("INITIAL",M+100,y+8);
     chk((g.reportType||"").toLowerCase().includes("follow"),M+125,y+8); doc.text("FOLLOWUP",M+129,y+8); y += 12;
 
-    if (m.causality||m.listedness||ev.pt) {
+    if (ev.pt||ev.causality||ev.listedness) {
       ensureSpace(28);
       doc.setFillColor(240,240,255); doc.rect(M,y,CW,5,"F");
       doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(40,40,120);
@@ -839,8 +853,8 @@ export default function App() {
       box(M+65,y,35,10); lbl("PT Code",M+66,y+3.5); fld(ev.pt_code||"—",M+66,y+8,33);
       box(M+100,y,50,10); lbl("SOC",M+101,y+3.5); fld(ev.soc||"—",M+101,y+8,48);
       box(M+150,y,40,10); lbl("MedDRA Version",M+151,y+3.5); fld("28.1",M+151,y+8,38); y+=11;
-      box(M,y,65,10); lbl("WHO-UMC Causality",M+1,y+3.5); fld(m.causality||"Not assessed",M+1,y+8,63);
-      box(M+65,y,65,10); lbl("Listedness",M+66,y+3.5); fld(m.listedness||"Not assessed",M+66,y+8,63);
+      box(M,y,65,10); lbl("WHO-UMC Causality",M+1,y+3.5); fld(ev.causality||"Not assessed",M+1,y+8,63);
+      box(M+65,y,65,10); lbl("Listedness",M+66,y+3.5); fld(ev.listedness||"Not assessed",M+66,y+8,63);
       box(M+130,y,60,10); lbl("Seriousness",M+131,y+3.5); fld(autoSerious()?"SERIOUS":"Non-serious",M+131,y+8,58); y+=12;
     }
 
@@ -874,7 +888,7 @@ export default function App() {
   const exportMedWatch = () => {
     const doc = new jsPDF({ unit: "mm", format: "a4" });
     const PW=210, PH=297, M=10, CW=PW-M*2;
-    const p=form.patient||{}, d=(form.products||[{}])[0], ev=(form.events||[{}])[0];
+    const p=form.patient||{}, d=(form.products||[{}])[0], ev=(form.events||[{}])[0] || {};
     const g=form.general||{}, t=form.triage||{}, m=form.medical||{};
     const val = (v) => v ? String(v) : "";
     const na  = (v) => v ? String(v) : "—";
@@ -995,7 +1009,7 @@ export default function App() {
     box(M,y,CW,10); lbl("Also Submitted to:",M+1,y+3.5);
     fld("SkyVigilance SafetyDB Training Platform",M+1,y+8,CW-4); y+=12;
 
-    if (ev.pt||m.causality||m.listedness) {
+    if (ev.pt||ev.causality||ev.listedness) {
       ensureSpace(28);
       doc.setFillColor(240,240,255); doc.rect(M,y,CW,5,"F");
       doc.setFont("helvetica","bold"); doc.setFontSize(7); doc.setTextColor(40,40,120);
@@ -1005,8 +1019,8 @@ export default function App() {
       box(M+65,y,35,10); lbl("PT Code",M+66,y+3.5); fld(ev.pt_code||"—",M+66,y+8,33);
       box(M+100,y,50,10); lbl("SOC",M+101,y+3.5); fld(ev.soc||"—",M+101,y+8,48);
       box(M+150,y,40,10); lbl("MedDRA Version",M+151,y+3.5); fld("28.1",M+151,y+8,38); y+=11;
-      box(M,y,65,10); lbl("WHO-UMC Causality",M+1,y+3.5); fld(m.causality||"Not assessed",M+1,y+8,63);
-      box(M+65,y,65,10); lbl("Listedness",M+66,y+3.5); fld(m.listedness||"Not assessed",M+66,y+8,63);
+      box(M,y,65,10); lbl("WHO-UMC Causality",M+1,y+3.5); fld(ev.causality||"Not assessed",M+1,y+8,63);
+      box(M+65,y,65,10); lbl("Listedness",M+66,y+3.5); fld(ev.listedness||"Not assessed",M+66,y+8,63);
       box(M+130,y,60,10); lbl("Seriousness",M+131,y+3.5); fld(autoSerious()?"SERIOUS":"Non-serious",M+131,y+8,58); y+=12;
     }
 
@@ -1629,6 +1643,12 @@ export default function App() {
 
   const MedicalForm = () => {
     const m = form.medical || {};
+    const setEv = (idx, key, val) => {
+      const arr = [...(form.events || [{}])];
+      arr[idx] = { ...arr[idx], [key]: val };
+      setForm(f => ({ ...f, events: arr }));
+    };
+
     return (
       <div className="space-y-6 bg-white/80 backdrop-blur-md rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-white p-6 mb-6">
         {form.narrative ? (
@@ -1648,7 +1668,7 @@ export default function App() {
         )}
 
         <div>
-          <SectionHead color="purple">Events Review & MedDRA Coding</SectionHead>
+          <SectionHead color="purple">Events Review &amp; MedDRA Coding</SectionHead>
           <p className="text-xs text-slate-500 mb-3 font-medium">Review and code all adverse events reported in this case.</p>
           {(form.events || [{}]).map((e, idx) => (
             <div key={idx} className="bg-white border border-purple-200 rounded-xl p-4 mb-4 shadow-sm">
@@ -1674,82 +1694,68 @@ export default function App() {
 
               <div className="mt-4 grid grid-cols-2 gap-4">
                 {F("Event Outcome", S(["Recovered / Resolved","Recovering / Resolving","Not recovered / Not resolved","Recovered with sequelae","Fatal","Unknown"],
-                  { value:e.outcome||"", onChange:ev=>{
-                    const arr = [...(form.events||[])]; arr[idx] = {...arr[idx], outcome:ev.target.value}; setForm(f=>({...f, events:arr}));
-                  }}))}
+                  { value:e.outcome||"", onChange:ev=>setEv(idx,"outcome",ev.target.value)}))}
                 {F("Nature of Event", S(["Congenital anomaly","Abuse","Accidental exposure","Overdose","Medication error","Off-label use","Misuse","Drug interaction","Unknown"],
-                  { value:e.natureOfEvent||"", onChange:ev=>{
-                    const arr = [...(form.events||[])]; arr[idx] = {...arr[idx], natureOfEvent:ev.target.value}; setForm(f=>({...f, events:arr}));
-                  }}))}
+                  { value:e.natureOfEvent||"", onChange:ev=>setEv(idx,"natureOfEvent",ev.target.value)}))}
+              </div>
+
+              <div className="mt-4 border-t border-purple-100 pt-4">
+                <div className="text-xs font-bold text-purple-800 uppercase mb-3">Event Assessment & Causality</div>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  {F("Listedness", S(["Listed","Unlisted","Unknown"], { value:e.listedness||"", onChange:ev => setEv(idx,"listedness",ev.target.value) }))}
+                  {F("Diagnosis / Symptom", S([{v:"D",l:"D – Diagnosis"},{v:"S",l:"S – Symptom/Sign"}], { value:e.diagSymptom||"", onChange:ev => setEv(idx,"diagSymptom",ev.target.value) }))}
+                  {F("Company Causality", S(["Related","Possibly Related","Unlikely Related","Not Related","Unknown"], { value:e.causalityReported||"", onChange:ev => setEv(idx,"causalityReported",ev.target.value) }))}
+                  {F("Causality Method", S(["WHO-UMC","Naranjo","CIOMS","Other"], { value:e.causalityMethod||"", onChange:ev => setEv(idx,"causalityMethod",ev.target.value) }))}
+                </div>
+
+                {e.causalityMethod === "WHO-UMC" && (
+                  <div className="bg-gradient-to-r from-yellow-50 to-white border border-yellow-200 rounded-xl p-4 shadow-sm mb-4">
+                    <div className="text-xs font-bold text-yellow-800 uppercase tracking-widest mb-3">WHO-UMC Algorithm</div>
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      {C("Temporal association (plausible time relationship)", e.temporal, ev=>setEv(idx,"temporal",ev.target.checked))}
+                      {C("Dechallenge – event abated on drug withdrawal", e.dechallenge, ev=>setEv(idx,"dechallenge",ev.target.checked))}
+                      {C("Rechallenge – event reappeared on reintroduction", e.rechallenge, ev=>setEv(idx,"rechallenge",ev.target.checked))}
+                      {C("Alternative cause can explain the reaction", e.alternative, ev=>setEv(idx,"alternative",ev.target.checked))}
+                      {C("Reaction known to the drug (listed in label)", e.knownReaction, ev=>setEv(idx,"knownReaction",ev.target.checked))}
+                      {C("Reaction confirmed by objective evidence", e.confirmed, ev=>setEv(idx,"confirmed",ev.target.checked))}
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <button onClick={() => runWHOUMC(idx)} className="bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-600 hover:to-amber-600 text-white text-xs px-4 py-2 rounded-lg font-bold shadow-sm transition-all duration-200">
+                        ⚙️ Run WHO-UMC
+                      </button>
+                      {e.causality && <span className="bg-white border-2 border-yellow-400 text-yellow-900 text-xs font-extrabold px-3 py-1.5 rounded-lg shadow-sm">Result: {e.causality}</span>}
+                    </div>
+                  </div>
+                )}
+
+                {e.causalityMethod === "Naranjo" && (
+                  <div className="bg-gradient-to-r from-orange-50 to-white border border-orange-200 rounded-xl p-4 shadow-sm mb-4">
+                    <div className="text-xs font-bold text-orange-800 uppercase tracking-widest mb-3">Naranjo Algorithm</div>
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      {C("Previous conclusive reports on this reaction", e.nar_previous, ev=>setEv(idx,"nar_previous",ev.target.checked))}
+                      {C("ADE appeared after the suspect drug", e.nar_reaction, ev=>setEv(idx,"nar_reaction",ev.target.checked))}
+                      {C("Adverse reaction improved when drug was stopped", e.nar_dechallenge, ev=>setEv(idx,"nar_dechallenge",ev.target.checked))}
+                      {C("ADE reappeared when drug was readministered", e.nar_rechallenge, ev=>setEv(idx,"nar_rechallenge",ev.target.checked))}
+                      {C("Alternative causes that could cause the ADE", e.nar_alternative, ev=>setEv(idx,"nar_alternative",ev.target.checked))}
+                      {C("ADE reappeared when placebo was given", e.nar_placebo, ev=>setEv(idx,"nar_placebo",ev.target.checked))}
+                      {C("Drug detected in blood/other fluids in toxic range", e.nar_drug_level, ev=>setEv(idx,"nar_drug_level",ev.target.checked))}
+                      {C("ADE more severe when dose increased", e.nar_dose_related, ev=>setEv(idx,"nar_dose_related",ev.target.checked))}
+                      {C("Patient had similar reaction to same/related drug", e.nar_prior_exp, ev=>setEv(idx,"nar_prior_exp",ev.target.checked))}
+                      {C("ADE confirmed by objective evidence", e.nar_confirmed, ev=>setEv(idx,"nar_confirmed",ev.target.checked))}
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <button onClick={() => runNaranjo(idx)} className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white text-xs px-4 py-2 rounded-lg font-bold shadow-sm transition-all duration-200">
+                        ⚙️ Calculate Naranjo Score
+                      </button>
+                      {e.naranjScore !== undefined && (
+                        <span className="bg-white border-2 border-orange-400 text-orange-900 text-xs font-extrabold px-3 py-1.5 rounded-lg shadow-sm">Score: {e.naranjScore} → {e.naranjResult}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           ))}
-        </div>
-
-        <div>
-          <SectionHead color="purple">Event Assessment</SectionHead>
-          <div className="grid grid-cols-2 gap-4">
-            {F("Listedness", S(["Listed","Unlisted","Unknown"],
-                { value:m.listedness||"", onChange:e => setNested("medical","listedness",e.target.value) }))}
-            {F("Diagnosis / Symptom", S([{v:"D",l:"D – Diagnosis"},{v:"S",l:"S – Symptom/Sign"}],
-                { value:m.diagSymptom||"", onChange:e => setNested("medical","diagSymptom",e.target.value) }))}
-            {F("Company Causality", S(["Related","Possibly Related","Unlikely Related","Not Related","Unknown"],
-                { value:m.causalityReported||"", onChange:e => setNested("medical","causalityReported",e.target.value) }))}
-            {F("Causality Method", S(["WHO-UMC","Naranjo","CIOMS","Other"],
-                { value:m.causalityMethod||"", onChange:e => setNested("medical","causalityMethod",e.target.value) }))}
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-r from-yellow-50 to-white border border-yellow-200 rounded-2xl p-5 shadow-sm">
-          <SectionHead color="yellow">WHO-UMC Causality Algorithm</SectionHead>
-          <p className="text-xs text-slate-500 mb-4 font-medium">Select criteria then click Run Algorithm to compute result.</p>
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            {C("Temporal association (plausible time relationship)",m.temporal,e=>setNested("medical","temporal",e.target.checked))}
-            {C("Dechallenge – event abated on drug withdrawal",m.dechallenge,e=>setNested("medical","dechallenge",e.target.checked))}
-            {C("Rechallenge – event reappeared on reintroduction",m.rechallenge,e=>setNested("medical","rechallenge",e.target.checked))}
-            {C("Alternative cause can explain the reaction",m.alternative,e=>setNested("medical","alternative",e.target.checked))}
-            {C("Reaction known to the drug (listed in label)",m.knownReaction,e=>setNested("medical","knownReaction",e.target.checked))}
-            {C("Reaction confirmed by objective evidence",m.confirmed,e=>setNested("medical","confirmed",e.target.checked))}
-          </div>
-          <div className="flex items-center gap-4">
-            <button onClick={runWHOUMC}
-              className="bg-gradient-to-r from-yellow-500 to-amber-500 hover:from-yellow-600 hover:to-amber-600 text-white text-sm px-5 py-2.5 rounded-xl font-bold shadow-md shadow-yellow-200 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200">
-              ⚙️ Run WHO-UMC Algorithm
-            </button>
-            {m.causality && (
-              <span className="bg-white border-2 border-yellow-400 text-yellow-900 text-sm font-extrabold px-4 py-2 rounded-xl shadow-sm">
-                Result: {m.causality}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-gradient-to-r from-orange-50 to-white border border-orange-200 rounded-2xl p-5 shadow-sm">
-          <SectionHead color="orange">Naranjo Algorithm</SectionHead>
-          <p className="text-xs text-slate-500 mb-4 font-medium">Check applicable criteria to calculate Naranjo score.</p>
-          <div className="grid grid-cols-2 gap-2 mb-4">
-            {C("Previous conclusive reports on this reaction",m.nar_previous,e=>setNested("medical","nar_previous",e.target.checked))}
-            {C("ADE appeared after the suspect drug",m.nar_reaction,e=>setNested("medical","nar_reaction",e.target.checked))}
-            {C("Adverse reaction improved when drug was stopped",m.nar_dechallenge,e=>setNested("medical","nar_dechallenge",e.target.checked))}
-            {C("ADE reappeared when drug was readministered",m.nar_rechallenge,e=>setNested("medical","nar_rechallenge",e.target.checked))}
-            {C("Alternative causes that could cause the ADE",m.nar_alternative,e=>setNested("medical","nar_alternative",e.target.checked))}
-            {C("ADE reappeared when placebo was given",m.nar_placebo,e=>setNested("medical","nar_placebo",e.target.checked))}
-            {C("Drug detected in blood/other fluids in toxic range",m.nar_drug_level,e=>setNested("medical","nar_drug_level",e.target.checked))}
-            {C("ADE more severe when dose increased",m.nar_dose_related,e=>setNested("medical","nar_dose_related",e.target.checked))}
-            {C("Patient had similar reaction to same/related drug",m.nar_prior_exp,e=>setNested("medical","nar_prior_exp",e.target.checked))}
-            {C("ADE confirmed by objective evidence",m.nar_confirmed,e=>setNested("medical","nar_confirmed",e.target.checked))}
-          </div>
-          <div className="flex items-center gap-4">
-            <button onClick={runNaranjo}
-              className="bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white text-sm px-5 py-2.5 rounded-xl font-bold shadow-md shadow-orange-200 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200">
-              ⚙️ Calculate Naranjo Score
-            </button>
-            {m.naranjScore !== undefined && (
-              <span className="bg-white border-2 border-orange-400 text-orange-900 text-sm font-extrabold px-4 py-2 rounded-xl shadow-sm">
-                Score: {m.naranjScore} → {m.naranjResult}
-              </span>
-            )}
-          </div>
         </div>
 
         <div>
@@ -1799,7 +1805,7 @@ export default function App() {
   };
 
   const QualityForm = () => {
-    const q=form.quality||{}, p=form.patient||{}, d2=(form.products||[{}])[0], e2=(form.events||[{}])[0], m=form.medical||{};
+    const q=form.quality||{}, p=form.patient||{}, d2=(form.products||[{}])[0], e2=(form.events||[{}])[0] || {};
     const qcItems = [
       ["patientComplete",   "Patient demographics complete (age, sex, weight)?"],
       ["drugComplete",      "Suspect drug information complete (dose, route, dates)?"],
@@ -1818,7 +1824,7 @@ export default function App() {
           <div className="grid grid-cols-2 gap-y-3 text-sm">
             {[["Case Number",selected.caseNumber],["Patient",p.age?p.age+" y/o "+(p.sex||"")+(p.weight?" · "+p.weight+" kg":""):"Not entered"],
               ["Suspect Drug",(d2?.name||"?")+(d2?.dose?" ("+d2.dose+")":"")],["MedDRA PT",e2?.pt||e2?.term||"Not coded"],
-              ["SOC",e2?.soc||"?"],["Causality",m?.causality||"Not assessed"],["Listedness",m?.listedness||"Not assessed"]
+              ["SOC",e2?.soc||"?"],["Causality",e2?.causality||"Not assessed"],["Listedness",e2?.listedness||"Not assessed"]
             ].map(([k,v]) => (
               <React.Fragment key={k}>
                 <span className="text-slate-500 font-medium">{k}</span>
@@ -1884,8 +1890,8 @@ export default function App() {
           ["Patient",form.patient?.age?form.patient.age+" y/o "+form.patient.sex:"Not entered"],
           ["Drug",(form.products||[])[0]?.name||"Not entered"],
           ["Event (PT)",(form.events||[])[0]?.pt||(form.events||[])[0]?.term||"Not coded"],
-          ["Serious",form.general?.serious?"Yes":"No"],["Causality",form.medical?.causality||"Pending"],
-          ["Listedness",form.medical?.listedness||"Pending"]
+          ["Serious",form.general?.serious?"Yes":"No"],["Causality",(form.events||[])[0]?.causality||"Pending"],
+          ["Listedness",(form.events||[])[0]?.listedness||"Pending"]
         ].map(([k,v]) => (
           <div key={k} className="flex gap-3">
             <span className="text-slate-500 w-32 flex-shrink-0 font-bold">{k}:</span>
@@ -2191,7 +2197,6 @@ export default function App() {
     const p = c.patient   || {};
     const d = (c.products || [{}])[0] || {};
     const e = (c.events   || [{}])[0] || {};
-    const m = c.medical   || {};
     const s = g.seriousness || t.seriousness || {};
     const seriousFlags = Object.entries(s).filter(([,v]) => v).map(([k]) =>
       ({ death:"Death", lifeThreatening:"Life-threatening", hospitalised:"Hospitalisation",
@@ -2218,8 +2223,8 @@ export default function App() {
       soc:          e.soc            || "—",
       onsetDate:    e.onsetDate      || "—",
       serious:      seriousFlags.length ? seriousFlags.join("; ") : "Non-serious",
-      causality:    m.causality      || "—",
-      listedness:   m.listedness     || "—",
+      causality:    e.causality      || "—",
+      listedness:   e.listedness     || "—",
       outcome:      e.outcome        || "—",
       status:       c.status         || "—",
       reporter:     t.qualification  || "—",
