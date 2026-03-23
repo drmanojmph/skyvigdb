@@ -116,7 +116,7 @@ const SectionHead = ({children, color="indigo"}) => {
 
 const MedDRAWidget = ({ targetSection, targetIdx, currentPt, currentPtCode, currentLlt, currentSoc,
                         meddraQuery, meddraResults, meddraLoading, meddraTarget, setMeddraTarget,
-                        searchMeddra, pickMeddra, onClear }) => {
+                        searchMeddra, pickMeddra, onClear, setMeddraQuery, setMeddraResults }) => {
   const isActive = meddraTarget?.section === targetSection && meddraTarget?.idx === targetIdx;
   return (
     <div className="mt-2 mb-2">
@@ -131,7 +131,11 @@ const MedDRAWidget = ({ targetSection, targetIdx, currentPt, currentPtCode, curr
         </div>
       )}
       {!isActive ? (
-        <button onClick={() => setMeddraTarget({ section: targetSection, idx: targetIdx })}
+        <button onClick={() => {
+            setMeddraTarget({ section: targetSection, idx: targetIdx });
+            if(setMeddraQuery) setMeddraQuery("");
+            if(setMeddraResults) setMeddraResults([]);
+          }}
           className="text-xs text-purple-600 hover:text-purple-800 underline font-semibold transition-colors">
           {currentPt ? "🔄 Recode with MedDRA" : "🔍 Code with MedDRA 28.1"}
         </button>
@@ -610,10 +614,13 @@ export default function App() {
 
   const pickMeddra = (m) => {
     const target = meddraTarget;
-    if (!target || target.section === "medical_event") {
+    if (!target) return;
+
+    if (target.section === "medical_event") {
       const events = [...((form.events?.length) ? form.events : [{}])];
-      events[0] = { ...events[0], llt:m.llt, llt_code:m.llt_code, pt:m.pt, pt_code:m.pt_code, hlt:m.hlt, hlgt:m.hlgt, soc:m.soc, meddra_version:m.version||"28.1", term:events[0]?.term||m.llt };
-      setForm(f => ({ ...f, events })); setMeddraQuery(m.pt);
+      const idx = target.idx || 0;
+      events[idx] = { ...events[idx], llt:m.llt, llt_code:m.llt_code, pt:m.pt, pt_code:m.pt_code, hlt:m.hlt, hlgt:m.hlgt, soc:m.soc, meddra_version:m.version||"28.1", term:events[idx]?.term||m.llt };
+      setForm(f => ({ ...f, events }));
     } else if (target.section === "event") {
       const events = [...((form.events?.length) ? form.events : [{}])];
       events[target.idx] = { ...events[target.idx], llt:m.llt, llt_code:m.llt_code, pt:m.pt, pt_code:m.pt_code, hlt:m.hlt, hlgt:m.hlgt, soc:m.soc, meddra_version:m.version||"28.1", term:events[target.idx]?.term||m.llt };
@@ -633,7 +640,11 @@ export default function App() {
     } else if (target.section === "medHistory") {
       setForm(f => ({ ...f, patient: { ...f.patient, medHistoryPt:m.pt, medHistoryPtCode:m.pt_code, medHistoryLlt:m.llt, medHistorySoc:m.soc } }));
     }
-    setMeddraResults([]); setMeddraLoading(false); setMeddraTarget(null);
+    
+    setMeddraQuery(""); 
+    setMeddraResults([]); 
+    setMeddraLoading(false); 
+    setMeddraTarget(null);
   };
 
   const autoSerious = () => {
@@ -666,9 +677,11 @@ export default function App() {
   const buildMedHistoryText = (p) => {
     const parts = [];
     if (p.medHistory) parts.push(p.medHistory);
-    (p.otherHistory || []).filter(h => h.description || h.substance).forEach(h => {
+    (p.otherHistory || []).filter(h => h.description || h.substance || h.meddraPt).forEach(h => {
       let entry = h.description || h.substance || "";
-      if (h.meddraPt && h.meddraPt !== entry) entry += ` [MedDRA: ${h.meddraPt}]`;
+      if (h.meddraPt && h.meddraPt !== entry) {
+        entry = entry ? `${entry} [MedDRA: ${h.meddraPt}]` : `[MedDRA: ${h.meddraPt}]`;
+      }
       if (h.startDate) {
         entry += ` (from ${h.startDate}`;
         if (h.stopDate) entry += ` to ${h.stopDate}`;
@@ -685,30 +698,38 @@ export default function App() {
   const generateNarrative = () => {
     const caseId = selected?.caseNumber || selected?.id || "[Case ID]";
     const p   = form.patient  || {};
-    const d   = (form.products || [{}])[0];
-    const e   = (form.events   || [{}])[0];
+    const products = form.products || [{}];
+    const events = form.events || [{}];
     const g   = form.general  || {};
     const t   = form.triage    || {};
-    const med = form.medical   || {};
+    const m = form.medical   || {};
+
     const medHistoryDisplay = buildMedHistoryText(p);
     const concomText = p.concomitant ? `Concomitant medications: ${p.concomitant}. ` : "";
     const labs = (p.labData || []).filter(l => l.testName && l.result);
     const labText = labs.length > 0
-      ? `Relevant laboratory findings: ${labs.slice(0,3).map(l => `${l.testName} ${l.result}${l.units ? " " + l.units : ""}${l.assessment && l.assessment !== "Normal" ? " (" + l.assessment + ")" : ""}`).join(", ")}. ` : "";
+      ? `Relevant laboratory findings: ${labs.map(l => `${l.testName} ${l.result}${l.units ? " " + l.units : ""}${l.assessment && l.assessment !== "Normal" ? " (" + l.assessment + ")" : ""}`).join(", ")}. ` : "";
+
+    const productsText = products.map(d => `${d.name||"[drug]"} (${d.dose||"dose not reported"}, ${d.route||"route not reported"}) for ${d.indication||"[indication]"}`).join(" and ");
+
+    const eventsText = events.map(e => `${e.pt || e.term || "[event]"}`).join(", ");
+    const onsetDates = [...new Set(events.map(e => e.onsetDate).filter(Boolean))];
+    const onsetText = onsetDates.length > 0 ? onsetDates.join(", ") : "[onset date]";
+
     const serious = autoSerious()
       ? "serious (" + Object.entries(g.seriousness || {}).filter(([,v]) => v).map(([k]) => k).join(", ") + ")" : "non-serious";
+
     const text =
       `Case ID: ${caseId}. ` +
       `A ${p.age||"[age]"}-year-old ${p.sex||"[sex]"} patient${p.weight ? " (" + p.weight + " kg)" : ""} ` +
       `with a medical history of ${medHistoryDisplay} ` +
-      `was receiving ${d?.name||"[drug]"} (${d?.dose||"dose not reported"}, ${d?.route||"route not reported"}) ` +
-      `for ${d?.indication||"[indication]"}. ` + concomText +
-      `On ${e?.onsetDate||"[onset date]"}, the patient developed ${e?.pt||e?.term||"[event]"}. ` +
+      `was receiving ${productsText}. ` + concomText +
+      `On ${onsetText}, the patient developed ${eventsText}. ` +
       `The event was considered ${serious}. ` + labText +
-      (med.causality   ? `Causality was assessed as ${med.causality} per WHO-UMC criteria. ` : "") +
-      (med.listedness  ? `The event is ${med.listedness} per the reference safety information. ` : "") +
-      `The case was reported by a ${t.qualification||"reporter"} from ${t.country||"[country]"}. ` +
-      (e?.outcome ? `Outcome: ${e.outcome}.` : "Outcome: Unknown.");
+      (m.causality ? `Causality was assessed as ${m.causality} per WHO-UMC criteria. ` : "") +
+      (m.listedness ? `The event is ${m.listedness} per the reference safety information. ` : "") +
+      `The case was reported by a ${t.qualification||"reporter"} from ${t.country||"[country]"}.`;
+
     setForm(f => ({ ...f, narrative: text }));
   };
 
@@ -1284,6 +1305,7 @@ export default function App() {
               meddraLoading={meddraLoading} meddraTarget={meddraTarget}
               setMeddraTarget={setMeddraTarget}
               searchMeddra={searchMeddra} pickMeddra={pickMeddra}
+              setMeddraQuery={setMeddraQuery} setMeddraResults={setMeddraResults}
               onClear={() => setForm(f => ({ ...f, patient:{ ...f.patient, medHistoryPt:"", medHistoryPtCode:"" } }))}
             />
 
@@ -1312,6 +1334,7 @@ export default function App() {
                     meddraLoading={meddraLoading} meddraTarget={meddraTarget}
                     setMeddraTarget={setMeddraTarget}
                     searchMeddra={searchMeddra} pickMeddra={pickMeddra}
+                    setMeddraQuery={setMeddraQuery} setMeddraResults={setMeddraResults}
                     onClear={() => { const arr=[...(form.patient?.otherHistory||[{}])]; arr[idx]={...arr[idx],meddraPt:"",meddraPtCode:""}; setForm(f=>({...f,patient:{...f.patient,otherHistory:arr}})); }}
                   />
                 </div>
@@ -1350,6 +1373,7 @@ export default function App() {
                     meddraLoading={meddraLoading} meddraTarget={meddraTarget}
                     setMeddraTarget={setMeddraTarget}
                     searchMeddra={searchMeddra} pickMeddra={pickMeddra}
+                    setMeddraQuery={setMeddraQuery} setMeddraResults={setMeddraResults}
                     onClear={() => {const a=[...(form.patient?.labData||[{}])];a[idx]={...a[idx],meddraPt:"",meddraPtCode:""};setForm(f=>({...f,patient:{...f.patient,labData:a}}));}}
                   />
                 </div>
@@ -1400,6 +1424,7 @@ export default function App() {
                     meddraLoading={meddraLoading} meddraTarget={meddraTarget}
                     setMeddraTarget={setMeddraTarget}
                     searchMeddra={searchMeddra} pickMeddra={pickMeddra}
+                    setMeddraQuery={setMeddraQuery} setMeddraResults={setMeddraResults}
                     onClear={() => setP(i,"indicationPt","")}
                   />
 
@@ -1495,6 +1520,7 @@ export default function App() {
                     meddraLoading={meddraLoading} meddraTarget={meddraTarget}
                     setMeddraTarget={setMeddraTarget}
                     searchMeddra={searchMeddra} pickMeddra={pickMeddra}
+                    setMeddraQuery={setMeddraQuery} setMeddraResults={setMeddraResults}
                     onClear={() => setEv(i,"pt","")}
                   />
                   {e.pt && IME_TERMS.includes(e.pt) && (
@@ -1622,52 +1648,42 @@ export default function App() {
         )}
 
         <div>
-          <SectionHead color="purple">MedDRA Coding (Events Tab) — v28.1</SectionHead>
-          <div className="relative mb-4">
-            <input className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm w-full pr-8 focus:outline-none focus:ring-2 focus:ring-purple-400 shadow-inner transition-all"
-              placeholder="Search Preferred Term or LLT (type 2+ characters)…"
-              value={meddraQuery}
-              onFocus={() => setMeddraTarget({ section:"medical_event", idx:0 })}
-              onChange={e => searchMeddra(e.target.value)} />
-            {meddraLoading && <div className="absolute right-4 top-3.5 text-slate-400 text-xs animate-pulse font-bold">searching…</div>}
-            {meddraResults.length > 0 && (
-              <div className="absolute z-20 top-full left-0 right-0 bg-white/95 backdrop-blur-md border border-slate-200 rounded-xl shadow-2xl mt-2 max-h-64 overflow-y-auto">
-                {meddraResults.map(m2 => (
-                  <div key={m2.llt_code} onClick={() => pickMeddra(m2)}
-                    className="px-5 py-3 hover:bg-purple-50 cursor-pointer text-sm border-b border-slate-100 last:border-0 transition-colors">
-                    <div className="font-bold text-slate-800">{m2.pt} <span className="ml-2 text-xs text-slate-400 font-normal">PT {m2.pt_code}</span></div>
-                    <div className="text-xs text-slate-500 flex flex-wrap gap-x-4 gap-y-1 mt-1">
-                      <span>LLT: {m2.llt} ({m2.llt_code})</span>
-                      <span>HLT: {m2.hlt}</span>
-                      <span className="text-purple-600 font-bold">SOC: {m2.soc}</span>
-                    </div>
-                  </div>
-                ))}
+          <SectionHead color="purple">Events Review & MedDRA Coding</SectionHead>
+          <p className="text-xs text-slate-500 mb-3 font-medium">Review and code all adverse events reported in this case.</p>
+          {(form.events || [{}]).map((e, idx) => (
+            <div key={idx} className="bg-white border border-purple-200 rounded-xl p-4 mb-4 shadow-sm">
+              <div className="flex justify-between items-center mb-2">
+                <span className="font-bold text-purple-900">Event {idx + 1}: {e.term || "(No reported term)"}</span>
+                <span className="text-xs font-medium text-slate-500">Onset: {e.onsetDate || "—"}</span>
               </div>
-            )}
-            {!meddraLoading && meddraQuery.length >= 2 && meddraResults.length === 0 && (
-              <div className="absolute z-20 top-full left-0 right-0 bg-white border border-slate-200 rounded-xl shadow-md mt-2 px-5 py-4 text-sm text-slate-500 font-medium">
-                No terms found for "{meddraQuery}" in MedDRA 28.1
-              </div>
-            )}
-          </div>
-          {(form.events||[])[0]?.pt && (
-            <div className="bg-gradient-to-r from-purple-50 to-white border border-purple-100 rounded-2xl p-4 text-sm space-y-2 shadow-sm">
-              <div className="flex justify-between items-center mb-1">
-                <span className="font-extrabold text-purple-900 tracking-wide">MedDRA 28.1 Hierarchy</span>
-                {IME_TERMS.includes((form.events)[0].pt) && (
-                  <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full font-bold text-xs shadow-sm">⚠️ IME TERM</span>
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-purple-800">
-                <span><b className="text-purple-950">LLT:</b> {(form.events)[0].llt} <span className="text-purple-500">({(form.events)[0].llt_code})</span></span>
-                <span><b className="text-purple-950">PT:</b>  {(form.events)[0].pt}  <span className="text-purple-500">({(form.events)[0].pt_code})</span></span>
-                <span><b className="text-purple-950">HLT:</b> {(form.events)[0].hlt}</span>
-                <span><b className="text-purple-950">HLGT:</b> {(form.events)[0].hlgt}</span>
-                <span className="col-span-2"><b className="text-purple-950">SOC:</b> {(form.events)[0].soc}</span>
+
+              <MedDRAWidget
+                targetSection="medical_event" targetIdx={idx}
+                currentPt={e.pt} currentPtCode={e.pt_code}
+                currentLlt={e.llt} currentSoc={e.soc}
+                meddraQuery={meddraQuery} meddraResults={meddraResults}
+                meddraLoading={meddraLoading} meddraTarget={meddraTarget}
+                setMeddraTarget={setMeddraTarget}
+                searchMeddra={searchMeddra} pickMeddra={pickMeddra}
+                setMeddraQuery={setMeddraQuery} setMeddraResults={setMeddraResults}
+                onClear={() => {
+                  const arr = [...(form.events||[])]; arr[idx] = {...arr[idx], pt:"", pt_code:"", llt:"", soc:""};
+                  setForm(f=>({...f, events:arr}));
+                }}
+              />
+
+              <div className="mt-4 grid grid-cols-2 gap-4">
+                {F("Event Outcome", S(["Recovered / Resolved","Recovering / Resolving","Not recovered / Not resolved","Recovered with sequelae","Fatal","Unknown"],
+                  { value:e.outcome||"", onChange:ev=>{
+                    const arr = [...(form.events||[])]; arr[idx] = {...arr[idx], outcome:ev.target.value}; setForm(f=>({...f, events:arr}));
+                  }}))}
+                {F("Nature of Event", S(["Congenital anomaly","Abuse","Accidental exposure","Overdose","Medication error","Off-label use","Misuse","Drug interaction","Unknown"],
+                  { value:e.natureOfEvent||"", onChange:ev=>{
+                    const arr = [...(form.events||[])]; arr[idx] = {...arr[idx], natureOfEvent:ev.target.value}; setForm(f=>({...f, events:arr}));
+                  }}))}
               </div>
             </div>
-          )}
+          ))}
         </div>
 
         <div>
