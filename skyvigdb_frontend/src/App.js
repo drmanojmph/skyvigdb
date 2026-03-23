@@ -57,6 +57,7 @@ const COUNTRIES = [
   "United Arab Emirates", "United Kingdom", "United States", "Vietnam"
 ];
 
+/* ================= TAILWIND CLASS MAP ================= */
 const getColorClasses = (color) => {
   const maps = {
     indigo: { text: "text-indigo-700", border: "border-indigo-100", accent: "accent-indigo-600" },
@@ -1701,9 +1702,8 @@ export default function App() {
 
               <div className="mt-4 border-t border-purple-100 pt-4">
                 <div className="text-xs font-bold text-purple-800 uppercase mb-3">Event Assessment & Causality</div>
-                <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="grid grid-cols-3 gap-4 mb-4">
                   {F("Listedness", S(["Listed","Unlisted","Unknown"], { value:e.listedness||"", onChange:ev => setEv(idx,"listedness",ev.target.value) }))}
-                  {F("Diagnosis / Symptom", S([{v:"D",l:"D – Diagnosis"},{v:"S",l:"S – Symptom/Sign"}], { value:e.diagSymptom||"", onChange:ev => setEv(idx,"diagSymptom",ev.target.value) }))}
                   {F("Company Causality", S(["Related","Possibly Related","Unlikely Related","Not Related","Unknown"], { value:e.causalityReported||"", onChange:ev => setEv(idx,"causalityReported",ev.target.value) }))}
                   {F("Causality Method", S(["WHO-UMC","Naranjo","CIOMS","Other"], { value:e.causalityMethod||"", onChange:ev => setEv(idx,"causalityMethod",ev.target.value) }))}
                 </div>
