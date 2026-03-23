@@ -412,8 +412,7 @@ export default function App() {
   };
 
   if (!user) return (
-    <div className="relative min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col items-center justify-center px-4 font-sans text-slate-800 overflow-hidden">
-      {/* VigiServe Repeating Watermark */}
+    <div className="relative min-h-screen bg-gradient-to-br from-slate-900 to-indigo-950 flex flex-col items-center justify-center px-4 py-12 font-sans text-slate-800 overflow-y-auto">
       <div className="absolute inset-0 pointer-events-none"
            style={{
              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 250 250' width='250' height='250'%3E%3Cg transform='rotate(-30, 125, 125)'%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='system-ui, sans-serif' font-size='28' font-weight='800' fill='rgba(255,255,255,0.03)' letter-spacing='2'%3EVigiServe%3C/text%3E%3C/g%3E%3C/svg%3E")`,
@@ -421,45 +420,64 @@ export default function App() {
            }}>
       </div>
 
-      {/* Login Box */}
-      <div className="relative z-10 bg-white/95 backdrop-blur-xl p-8 rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] border border-white/20 w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="text-5xl mb-3 drop-shadow-md">🛡️</div>
-          <h2 className="text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-900 to-blue-800 tracking-tight">SkyVigilance</h2>
-          <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">SafetyDB Platform</p>
+      <div className="relative z-10 w-full max-w-5xl grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+        
+        {/* Left Column: Login Box */}
+        <div className="bg-white/95 backdrop-blur-xl p-8 md:p-10 rounded-3xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.5)] border border-white/20">
+          <div className="text-center mb-8">
+            <div className="text-6xl mb-4 drop-shadow-md">🛡️</div>
+            <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-900 to-blue-800 tracking-tight">SkyVigilance</h2>
+            <p className="text-sm font-bold text-slate-400 mt-2 uppercase tracking-widest">SafetyDB Platform</p>
+          </div>
+          <input placeholder="Username (e.g. anand_triage)" className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 w-full mb-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all font-medium"
+            value={login.username} onChange={e => setLogin({...login, username:e.target.value})}
+            onKeyDown={e => e.key === "Enter" && doLogin()} />
+          <input type="password" placeholder="Password" className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 w-full mb-8 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all font-medium"
+            value={login.password} onChange={e => setLogin({...login, password:e.target.value})}
+            onKeyDown={e => e.key === "Enter" && doLogin()} />
+          <button onClick={doLogin} className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white w-full py-4 rounded-xl font-bold shadow-md shadow-indigo-200 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200">
+            Sign In
+          </button>
+          <p className="text-xs text-slate-400 font-medium text-center mt-6">Format: basename_role (e.g. anand_medical)</p>
         </div>
-        <input placeholder="Username (e.g. anand_triage)" className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 w-full mb-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all font-medium"
-          value={login.username} onChange={e => setLogin({...login, username:e.target.value})}
-          onKeyDown={e => e.key === "Enter" && doLogin()} />
-        <input type="password" placeholder="Password" className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 w-full mb-6 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white transition-all font-medium"
-          value={login.password} onChange={e => setLogin({...login, password:e.target.value})}
-          onKeyDown={e => e.key === "Enter" && doLogin()} />
-        <button onClick={doLogin} className="bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white w-full py-3 rounded-xl font-bold shadow-md shadow-indigo-200 hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 text-sm">
-          Sign In
-        </button>
-        <p className="text-xs text-slate-400 font-medium text-center mt-6">Format: basename_role (e.g. anand_medical)</p>
 
-        <div className="mt-6 pt-6 border-t border-slate-200 space-y-4">
-          <a href="https://drive.google.com/file/d/1Nvr5Yxq58vy9atXv-rGtJaqNNMJCtgTB/view?usp=drive_link"
-             target="_blank"
-             rel="noopener noreferrer"
-             className="flex items-center justify-center gap-2 w-full py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-sm font-bold rounded-xl transition-colors">
-            📄 View SafetyDB Manual V1
-          </a>
-          <div className="w-full aspect-video rounded-xl overflow-hidden shadow-inner border border-slate-200">
-            <iframe
-              width="100%"
-              height="100%"
-              src="https://www.youtube.com/embed/B4pq2AJKXPU"
-              title="SafetyDB Demo Video"
-              frameBorder="0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            ></iframe>
+        {/* Right Column: Resources */}
+        <div className="bg-white/10 backdrop-blur-md p-8 md:p-10 rounded-3xl shadow-2xl border border-white/10 flex flex-col h-full justify-center text-white">
+          <h3 className="text-2xl font-extrabold mb-6 flex items-center gap-3">📚 Platform Resources</h3>
+          
+          <div className="space-y-8">
+            <a href="https://drive.google.com/file/d/1Nvr5Yxq58vy9atXv-rGtJaqNNMJCtgTB/view?usp=drive_link"
+               target="_blank"
+               rel="noopener noreferrer"
+               className="flex items-center justify-center gap-2 w-full py-4 bg-white/20 hover:bg-white/30 border border-white/30 text-sm font-bold rounded-xl transition-colors shadow-sm">
+              📄 View SafetyDB Manual V1
+            </a>
+            
+            <div className="flex flex-col gap-3">
+              <div className="w-full aspect-video rounded-xl overflow-hidden shadow-2xl border border-white/20 bg-slate-900">
+                <iframe
+                  width="100%"
+                  height="100%"
+                  src="https://www.youtube.com/embed/B4pq2AJKXPU?rel=0"
+                  title="SafetyDB Demo Video"
+                  frameBorder="0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                ></iframe>
+              </div>
+              <div className="flex justify-between items-center px-2">
+                <span className="text-sm font-medium text-indigo-200">Demo Video</span>
+                <a href="https://www.youtube.com/watch?v=B4pq2AJKXPU" target="_blank" rel="noopener noreferrer" 
+                   className="text-sm font-bold text-white hover:text-indigo-300 underline transition-colors drop-shadow-sm">
+                   Watch on YouTube ↗
+                </a>
+              </div>
+            </div>
           </div>
         </div>
+
       </div>
-      <p className="relative z-10 mt-8 text-xs font-bold text-slate-400/60 uppercase tracking-widest">A VigiServe Foundation Initiative</p>
+      <p className="relative z-10 mt-12 text-xs font-bold text-slate-400/60 uppercase tracking-widest">A VigiServe Foundation Initiative</p>
     </div>
   );
 
