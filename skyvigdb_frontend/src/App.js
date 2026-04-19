@@ -17,6 +17,7 @@ const BASE_ACCOUNTS = [
    { basename: "samiksha", password: "learn123" },
    { basename: "soumyaroy", password: "train123" },
     { basename: "krutika", password: "train123" },
+   { basename: "prathibha", password: "train123" },
   { basename: "manoj", password: "m123anoj" },
   { basename: "student1", password: "train123" },
   { basename: "demo", password: "demo123" }
